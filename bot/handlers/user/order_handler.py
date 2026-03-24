@@ -7,6 +7,7 @@ from decimal import Decimal
 from bot.database import Database
 from bot.database.models.main import Order, OrderItem, CustomerInfo, ShoppingCart
 from bot.database.methods import reserve_inventory, get_cart_items, calculate_cart_total
+from bot.database.methods.read import get_bot_setting
 from bot.keyboards import back, simple_buttons
 from bot.i18n import localize
 from bot.config import EnvKeys
@@ -250,19 +251,25 @@ async def show_payment_method_selection(message: Message, state: FSMContext, use
 
     summary_text += text
 
+    # Check if Cash on Delivery is enabled (default: true)
+    cod_enabled = get_bot_setting("cod_enabled", default="true")
+    cod_active = str(cod_enabled).lower() != "false"
+
     # Payment method buttons
     bitcoin_text = localize("order.payment_method.bitcoin")
-    cash_text = localize("order.payment_method.cash")
+    payment_buttons = [(bitcoin_text, "payment_method_bitcoin")]
+
+    if cod_active:
+        cash_text = localize("order.payment_method.cash")
+        payment_buttons.append((cash_text, "payment_method_cash"))
 
     await message.answer(
         summary_text,
-        reply_markup=simple_buttons([
-            (bitcoin_text, "payment_method_bitcoin"),
-            (cash_text, "payment_method_cash")
-        ], per_row=2)
+        reply_markup=simple_buttons(payment_buttons, per_row=2)
     )
 
     await state.set_state(OrderStates.waiting_payment_method)
+
 
 
 @router.callback_query(F.data == "payment_method_bitcoin", OrderStates.waiting_payment_method)

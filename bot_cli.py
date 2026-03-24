@@ -1151,6 +1151,14 @@ def set_setting(args):
         timezone.reload_timezone()
         print(f"⏰ Timezone reloaded: {timezone.get_timezone()}")
 
+    # Special handling for cod_enabled
+    if args.key == 'cod_enabled':
+        if args.value.lower() == 'false':
+            print("💵 Cash on Delivery is now DISABLED — only Bitcoin will be offered at checkout.")
+        else:
+            print("💵 Cash on Delivery is now ENABLED — both Bitcoin and Cash options will be shown at checkout.")
+
+
 
 def get_setting(args):
     """Get bot setting value"""
