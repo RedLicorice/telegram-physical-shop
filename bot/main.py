@@ -49,26 +49,33 @@ async def __on_start_up(dp: Dispatcher, bot: Bot) -> None:
     # Registration of handlers (models already registered in initialize_database)
     register_all_handlers(dp)
 
-    # Load Bitcoin addresses from file into database
-    from bot.payments.bitcoin import load_bitcoin_addresses_from_file, get_bitcoin_address_stats
-    loaded_count = load_bitcoin_addresses_from_file()
-    stats = get_bitcoin_address_stats()
-    if loaded_count > 0:
-        logging.info(f"Loaded {loaded_count} new Bitcoin addresses from btc_addresses.txt")
-    logging.info(f"Bitcoin address pool: {stats['available']} available, {stats['used']} used, {stats['total']} total")
-    if stats['available'] == 0:
-        logging.warning("⚠️  No Bitcoin addresses available! Add addresses to btc_addresses.txt")
+    # Load Crypto addresses from files into database
+    from bot.payments.crypto import load_crypto_addresses_from_file, get_crypto_address_stats, CHAIN_FILES
+    
+    for chain, file_path in CHAIN_FILES.items():
+        loaded_count = load_crypto_addresses_from_file(chain)
+        stats = get_crypto_address_stats(chain)
+        if loaded_count > 0:
+            logging.info(f"Loaded {loaded_count} new {chain} addresses from {file_path}")
+        logging.info(f"{chain} address pool: {stats['available']} available, {stats['used']} used, {stats['total']} total")
+        if stats['available'] == 0:
+            logging.warning(f"⚠️  No {chain} addresses available! Add addresses to {file_path}")
 
-    # Start file watcher for automatic Bitcoin address reloading
+    # Start file watcher for automatic Crypto address reloading
     if start_file_watcher():
-        logging.info("🔍 Bitcoin address file watcher started - addresses will auto-reload on file changes")
+        logging.info("🔍 Crypto address file watcher started - addresses will auto-reload on file changes")
     else:
-        logging.warning("⚠️  Failed to start Bitcoin address file watcher")
+        logging.warning("⚠️  Failed to start Crypto address file watcher")
 
     # Start reservation cleaner for expired inventory reservations
     from bot.tasks.reservation_cleaner import start_reservation_cleaner
     start_reservation_cleaner()
     logging.info("🧹 Inventory reservation cleaner started - expired reservations will be auto-released every 60s")
+
+    # Start crypto payment checker
+    from bot.tasks.payment_checker import start_payment_checker
+    start_payment_checker()
+    logging.info("💸 Payment checker started - checking block explorers every 60s")
 
     # Setting Rate Limiting
     rate_config = RateLimitConfig(
@@ -142,9 +149,9 @@ async def __on_shutdown(dp: Dispatcher, bot: Bot) -> None:
 
     logging.info("Starting shutdown...")
 
-    # Stop Bitcoin address file watcher
+    # Stop Crypto address file watcher
     if stop_file_watcher():
-        logging.info("Bitcoin address file watcher stopped")
+        logging.info("Crypto address file watcher stopped")
 
     # Create a data directory if it does not exist
     Path("data").mkdir(exist_ok=True)

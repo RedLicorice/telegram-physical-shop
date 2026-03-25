@@ -15,14 +15,14 @@ from aiogram.client.default import DefaultBotProperties
 from bot.database.main import Database
 from bot.database.models.main import (
     User, Order, CustomerInfo, BotSettings,
-    ReferenceCode, BitcoinAddress, Goods,
+    ReferenceCode, CryptoAddress, Goods,
     ReferralEarnings, OrderItem
 )
 from bot.database.methods.update import ban_user, unban_user
 from bot.database.methods.inventory import deduct_inventory, release_reservation, add_inventory, reserve_inventory
 from bot.database.methods.read import get_reference_bonus_percent
 from bot.referrals.codes import create_reference_code, deactivate_reference_code
-from bot.payments.bitcoin import add_bitcoin_address, add_bitcoin_addresses_bulk, get_bitcoin_address_stats
+from bot.payments.crypto import add_crypto_address, add_crypto_addresses_bulk, get_crypto_address_stats
 from bot.export.customer_csv import (
     update_customer_spendings,
     sync_all_customers_to_csv,
@@ -914,8 +914,9 @@ def list_refcodes(args):
         print(f"\nTotal: {len(codes)} reference codes")
 
 
-def add_btc_address(args):
-    """Add Bitcoin address(es)"""
+def add_crypto_address_cli(args):
+    """Add Crypto address(es)"""
+    chain = args.chain.upper()
     if args.file:
         # Load from file
         file_path = Path(args.file)
@@ -926,23 +927,24 @@ def add_btc_address(args):
         with open(file_path, 'r') as f:
             addresses = [line.strip() for line in f if line.strip()]
 
-        count = add_bitcoin_addresses_bulk(addresses)
-        print(f"✅ Added {count} Bitcoin address(es)")
+        count = add_crypto_addresses_bulk(chain, addresses)
+        print(f"✅ Added {count} {chain} address(es)")
 
     elif args.address:
         # Add single address
-        success = add_bitcoin_address(args.address)
+        success = add_crypto_address(chain, args.address)
         if success:
-            print(f"✅ Bitcoin address added: {args.address}")
+            print(f"✅ {chain} address added: {args.address}")
         else:
-            print(f"❌ Bitcoin address already exists: {args.address}")
+            print(f"❌ {chain} address already exists: {args.address}")
 
 
-def list_btc_addresses(args):
-    """List Bitcoin addresses and statistics"""
-    stats = get_bitcoin_address_stats()
+def list_crypto_addresses_cli(args):
+    """List Crypto addresses and statistics"""
+    chain = args.chain.upper()
+    stats = get_crypto_address_stats(chain)
 
-    print("\n📊 Bitcoin Address Statistics")
+    print(f"\n📊 {chain} Address Statistics")
     print("-" * 40)
     print(f"Total addresses:     {stats['total']}")
     print(f"Available addresses: {stats['available']}")
@@ -950,7 +952,7 @@ def list_btc_addresses(args):
 
     if args.show_all:
         with Database().session() as session:
-            addresses = session.query(BitcoinAddress).all()
+            addresses = session.query(CryptoAddress).filter_by(chain=chain).all()
 
             if addresses:
                 print(f"\n{'Address':<45} {'Status':<10} {'Used By':<15}")
@@ -1379,20 +1381,22 @@ def main():
     list_ref.add_argument('--active-only', action='store_true', help='Show only active codes')
     list_ref.set_defaults(func=list_refcodes)
 
-    # Bitcoin address management
-    btc_parser = subparsers.add_parser('btc', help='Manage Bitcoin addresses')
-    btc_sub = btc_parser.add_subparsers(dest='btc_command')
+    # Crypto address management
+    crypto_parser = subparsers.add_parser('crypto', help='Manage Crypto addresses')
+    crypto_sub = crypto_parser.add_subparsers(dest='crypto_command')
 
-    # Add Bitcoin address
-    add_btc = btc_sub.add_parser('add', help='Add Bitcoin address(es)')
-    add_btc.add_argument('--address', help='Single Bitcoin address')
-    add_btc.add_argument('--file', help='File with Bitcoin addresses (one per line)')
-    add_btc.set_defaults(func=add_btc_address)
+    # Add Crypto address
+    add_crypto = crypto_sub.add_parser('add', help='Add Crypto address(es)')
+    add_crypto.add_argument('--chain', required=True, help='Blockchain (e.g., BTC, ETH, SOL, TRX)')
+    add_crypto.add_argument('--address', help='Single Crypto address')
+    add_crypto.add_argument('--file', help='File with Crypto addresses (one per line)')
+    add_crypto.set_defaults(func=add_crypto_address_cli)
 
-    # List Bitcoin addresses
-    list_btc = btc_sub.add_parser('list', help='List Bitcoin addresses')
-    list_btc.add_argument('--show-all', action='store_true', help='Show all addresses')
-    list_btc.set_defaults(func=list_btc_addresses)
+    # List Crypto addresses
+    list_crypto = crypto_sub.add_parser('list', help='List Crypto addresses')
+    list_crypto.add_argument('--chain', required=True, help='Blockchain (e.g., BTC, ETH, SOL, TRX)')
+    list_crypto.add_argument('--show-all', action='store_true', help='Show all addresses')
+    list_crypto.set_defaults(func=list_crypto_addresses_cli)
 
     # Update inventory
     inv_parser = subparsers.add_parser('inventory', help='Update item inventory')

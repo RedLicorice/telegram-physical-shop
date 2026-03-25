@@ -285,6 +285,9 @@ class Order(Database.BASE):
     phone_number = Column(String(50), nullable=False)
     delivery_note = Column(Text, nullable=True)
     bitcoin_address = Column(String(100), nullable=True)
+    crypto_currency = Column(String(20), nullable=True)  # e.g., 'BTC', 'ETH', 'USDT-ERC20'
+    crypto_amount = Column(Numeric(20, 8), nullable=True)  # Using high precision for crypto (8 decimals)
+    crypto_address = Column(String(150), nullable=True)
     order_status = Column(String(20), nullable=False,
                           default='pending')  # pending, reserved, confirmed, delivered, cancelled, expired
     reserved_until = Column(DateTime(timezone=True),
@@ -305,9 +308,10 @@ class Order(Database.BASE):
 
     def __init__(self, buyer_id: int, total_price, payment_method: str,
                  delivery_address: str, phone_number: str, delivery_note: str = None,
-                 bitcoin_address: str = None, order_status: str = 'pending',
-                 order_code: str = None, reserved_until=None, delivery_time=None,
-                 bonus_applied=0, **kw: Any):
+                 bitcoin_address: str = None, crypto_currency: str = None,
+                 crypto_amount=None, crypto_address: str = None,
+                 order_status: str = 'pending', order_code: str = None, 
+                 reserved_until=None, delivery_time=None, bonus_applied=0, **kw: Any):
         super().__init__(**kw)
         self.buyer_id = buyer_id
         self.order_code = order_code
@@ -318,6 +322,9 @@ class Order(Database.BASE):
         self.phone_number = phone_number
         self.delivery_note = delivery_note
         self.bitcoin_address = bitcoin_address
+        self.crypto_currency = crypto_currency
+        self.crypto_amount = crypto_amount
+        self.crypto_address = crypto_address
         self.order_status = order_status
         self.reserved_until = reserved_until
         self.delivery_time = delivery_time
@@ -390,6 +397,33 @@ class BitcoinAddress(Database.BASE):
 
     def __init__(self, address: str, **kw: Any):
         super().__init__(**kw)
+        self.address = address
+
+
+class CryptoAddress(Database.BASE):
+    """
+    Unified model for all cryptocurrency addresses (BTC, ETH, LTC, SOL, TRX, etc.)
+    """
+    __tablename__ = 'crypto_addresses'
+
+    id = Column(Integer, primary_key=True)
+    chain = Column(String(20), nullable=False, index=True)  # e.g., 'BTC', 'ETH', 'SOL', 'TRX', 'LTC'
+    address = Column(String(150), nullable=False, unique=True, index=True)
+    is_used = Column(Boolean, nullable=False, default=False, index=True)
+    used_by = Column(BigInteger, ForeignKey('users.telegram_id', ondelete="SET NULL"), nullable=True, index=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    order_id = Column(Integer, ForeignKey('orders.id', ondelete="SET NULL"), nullable=True, index=True)
+
+    user = relationship("User", foreign_keys=lambda: [CryptoAddress.used_by])
+    order = relationship("Order", foreign_keys=lambda: [CryptoAddress.order_id])
+
+    __table_args__ = (
+        UniqueConstraint('chain', 'address', name='uq_chain_address'),
+    )
+
+    def __init__(self, chain: str, address: str, **kw: Any):
+        super().__init__(**kw)
+        self.chain = chain
         self.address = address
 
 

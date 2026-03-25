@@ -13,7 +13,8 @@ from bot.i18n import localize
 from bot.config import EnvKeys
 from bot.states import OrderStates
 from bot.logger_mesh import logger
-from bot.payments.bitcoin import get_available_bitcoin_address, mark_bitcoin_address_used
+from bot.payments.crypto import get_available_crypto_address, mark_crypto_address_used
+from bot.payments.prices import get_crypto_price_in_usd
 from bot.export import log_order_creation, sync_customer_to_csv
 from bot.utils import generate_unique_order_code, get_telegram_username
 from bot.monitoring import get_metrics
@@ -256,8 +257,8 @@ async def show_payment_method_selection(message: Message, state: FSMContext, use
     cod_active = str(cod_enabled).lower() != "false"
 
     # Payment method buttons
-    bitcoin_text = localize("order.payment_method.bitcoin")
-    payment_buttons = [(bitcoin_text, "payment_method_bitcoin")]
+    crypto_text = "Cryptocurrency 🪙"
+    payment_buttons = [(crypto_text, "payment_method_crypto")]
 
     if cod_active:
         cash_text = localize("order.payment_method.cash")
@@ -272,22 +273,56 @@ async def show_payment_method_selection(message: Message, state: FSMContext, use
 
 
 
-@router.callback_query(F.data == "payment_method_bitcoin", OrderStates.waiting_payment_method)
-async def payment_method_bitcoin_handler(call: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "payment_method_crypto", OrderStates.waiting_payment_method)
+async def payment_method_crypto_handler(call: CallbackQuery, state: FSMContext):
     """
-    User selected Bitcoin payment
+    User selected Crypto payment, show supported coins
     """
     await call.answer()
-    await state.update_data(payment_method='bitcoin')
+    
+    crypto_options = [
+        ("Bitcoin (BTC)", "crypto_pay_BTC_BTC"),
+        ("Litecoin (LTC)", "crypto_pay_LTC_LTC"),
+        ("Ethereum (ETH)", "crypto_pay_ETH_ETH"),
+        ("USDT (ERC20)", "crypto_pay_ETH_USDT-ERC20"),
+        ("USDC (ERC20)", "crypto_pay_ETH_USDC-ERC20"),
+        ("Solana (SOL)", "crypto_pay_SOL_SOL"),
+        ("USDT (SPL)", "crypto_pay_SOL_USDT-SPL"),
+        ("USDC (SPL)", "crypto_pay_SOL_USDC-SPL"),
+        ("Tron (TRX)", "crypto_pay_TRX_TRX"),
+        ("USDT (TRC20)", "crypto_pay_TRX_USDT-TRC20"),
+        ("USDC (TRC20)", "crypto_pay_TRX_USDC-TRC20"),
+    ]
+    
+    await call.message.edit_text(
+        "Please select a cryptocurrency:",
+        reply_markup=simple_buttons(crypto_options, per_row=2)
+    )
+
+@router.callback_query(F.data.startswith("crypto_pay_"))
+async def process_specific_crypto_handler(call: CallbackQuery, state: FSMContext):
+    await call.answer()
+    
+    # Extract chain and currency from data: crypto_pay_CHAIN_CURRENCY
+    parts = call.data.replace("crypto_pay_", "").split("_")
+    if len(parts) >= 2:
+        chain = parts[0]
+        currency = parts[1]
+    else:
+        # Fallback for simple names like crypto_pay_BTC
+        chain = parts[0]
+        currency = parts[0]
+
+    await state.update_data(payment_method='crypto')
 
     # Track payment method selection
     metrics = get_metrics()
     if metrics:
-        metrics.track_event("payment_bitcoin_initiated", call.from_user.id)
+        metrics.track_event(f"payment_{currency}_initiated", call.from_user.id)
         metrics.track_conversion("customer_journey", "payment_initiated", call.from_user.id)
 
-    # Proceed to Bitcoin payment
-    await process_bitcoin_payment_new_message(call.message, state, user_id=call.from_user.id)
+    # Proceed to Crypto payment
+    await process_crypto_payment_new_message(call.message, state, chain, currency, user_id=call.from_user.id)
 
 
 @router.callback_query(F.data == "payment_method_cash", OrderStates.waiting_payment_method)
@@ -379,182 +414,9 @@ async def finalize_order_and_payment(message: Message, state: FSMContext, user_i
 
     # Show payment method selection
     await show_payment_method_selection(message, state, user_id=user_id)
-
-
-async def process_bitcoin_payment(call: CallbackQuery, state: FSMContext):
+async def process_crypto_payment_new_message(message: Message, state: FSMContext, chain: str, currency: str, user_id: int = None):
     """
-    Process Bitcoin payment from callback query
-    """
-    user_id = call.from_user.id
-
-    # Get real username from Telegram API
-    username = await get_telegram_username(user_id, call.bot)
-
-    # Get cart items
-    cart_items = await get_cart_items(user_id)
-
-    if not cart_items:
-        await call.answer(localize("cart.empty_alert"), show_alert=True)
-        return
-
-    # Calculate total
-    total_amount = await calculate_cart_total(user_id)
-
-    # Get Bitcoin address
-    btc_address = get_available_bitcoin_address()
-
-    if not btc_address:
-        await call.message.edit_text(
-            localize("order.payment.system_unavailable"),
-            reply_markup=back("back_to_menu")
-        )
-        return
-
-    # Get customer info
-    with Database().session() as session:
-        customer_info = session.query(CustomerInfo).filter_by(
-            telegram_id=user_id
-        ).first()
-
-        if not customer_info:
-            await call.answer(localize("order.payment.customer_not_found"), show_alert=True)
-            return
-
-        # Create one order for entire cart
-        try:
-            items_summary = []
-
-            # Create the main order
-            order = Order(
-                buyer_id=user_id,
-                total_price=Decimal(str(total_amount)),
-                payment_method="bitcoin",
-                delivery_address=customer_info.delivery_address,
-                phone_number=customer_info.phone_number,
-                delivery_note=customer_info.delivery_note or "",
-                bitcoin_address=btc_address,
-                order_status="pending"
-            )
-            session.add(order)
-            session.flush()  # Get the order ID
-
-            # Generate unique order code
-            order.order_code = generate_unique_order_code(session)
-
-            # Process each cart item and create OrderItems (Physical Goods - No ItemValues)
-            items_to_reserve = []
-            for cart_item in cart_items:
-                item_name = cart_item['item_name']
-                quantity = cart_item['quantity']
-                price = cart_item['price']
-
-                # Create OrderItem (no item_values field for physical goods)
-                order_item = OrderItem(
-                    order_id=order.id,
-                    item_name=item_name,
-                    price=Decimal(str(price)),
-                    quantity=quantity
-                )
-                session.add(order_item)
-
-                # Add to reservation list
-                items_to_reserve.append({
-                    'item_name': item_name,
-                    'quantity': quantity
-                })
-
-                items_summary.append(f"{item_name} x{quantity} = {cart_item['total']} {EnvKeys.PAY_CURRENCY}")
-
-            # Reserve inventory for 15 minutes
-            success, msg = reserve_inventory(order.id, items_to_reserve, session)
-            if not success:
-                session.rollback()
-                await call.message.edit_text(
-                    localize("order.inventory.unable_to_reserve", unavailable_items=msg),
-                    reply_markup=back("view_cart")
-                )
-                return
-
-            # Mark Bitcoin address as used with this order
-            mark_bitcoin_address_used(btc_address, user_id, username, order.id, session=session,
-                                      order_code=order.order_code)
-
-            # Log order creation
-            log_order_creation(
-                order_id=order.id,
-                buyer_id=user_id,
-                buyer_username=username,
-                items_summary="\n".join(items_summary),
-                total_price=float(total_amount),
-                payment_method="bitcoin",
-                delivery_address=customer_info.delivery_address,
-                phone_number=customer_info.phone_number,
-                bitcoin_address=btc_address,
-                order_code=order.order_code
-            )
-
-            # Clear cart
-            session.query(ShoppingCart).filter_by(user_id=user_id).delete()
-
-            session.commit()
-
-            # Send payment instructions to user
-            payment_text = (
-                    localize("order.payment.bitcoin.title") + "\n\n" +
-                    localize("order.payment.bitcoin.order_code", code=order.order_code) + "\n" +
-                    localize("order.payment.bitcoin.total_amount", amount=total_amount,
-                             currency=EnvKeys.PAY_CURRENCY) + "\n\n" +
-                    localize("order.payment.bitcoin.items_title") + "\n" +
-                    f"{chr(10).join(items_summary)}\n\n" +
-                    localize("order.payment.bitcoin.delivery_title") + "\n"
-                                                                       f"📍 Address: {customer_info.delivery_address}\n"
-                                                                       f"📞 Phone: {customer_info.phone_number}\n"
-            )
-
-            if customer_info.delivery_note:
-                payment_text += f"📝 Note: {customer_info.delivery_note}\n"
-
-            payment_text += (
-                    "\n" + localize("order.payment.bitcoin.address_title") + "\n"
-                                                                             f"<code>{btc_address}</code>\n\n" +
-                    localize("order.payment.bitcoin.important_title") + "\n" +
-                    localize("order.payment.bitcoin.send_exact") + "\n" +
-                    localize("order.payment.bitcoin.one_time_address") + "\n" +
-                    localize("order.payment.bitcoin.admin_confirm") + "\n\n" +
-                    localize("order.payment.bitcoin.need_help")
-            )
-
-            await call.message.edit_text(
-                payment_text,
-                reply_markup=back("back_to_menu")
-            )
-
-            # Notify admin
-            await notify_admin_new_order(
-                call.bot, order.order_code, user_id, username,
-                "\n".join(items_summary), total_amount, btc_address,
-                customer_info.delivery_address, customer_info.phone_number,
-                customer_info.delivery_note or ""
-            )
-
-            # Sync customer CSV
-            sync_customer_to_csv(user_id, username)
-
-            await state.clear()
-
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Error creating orders: {e}")
-            await call.message.edit_text(
-                localize("order.payment.creation_error"),
-                reply_markup=back("view_cart")
-            )
-            return
-
-
-async def process_bitcoin_payment_new_message(message: Message, state: FSMContext, user_id: int = None):
-    """
-    Process Bitcoin payment by sending a new message
+    Process Crypto payment by sending a new message
     """
     if user_id is None:
         user_id = message.from_user.id
@@ -579,10 +441,20 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
     # Calculate final amount after bonus
     final_amount = total_amount - bonus_applied
 
-    # Get Bitcoin address
-    btc_address = get_available_bitcoin_address()
+    # Get Crypto price and calculate amount
+    crypto_price = await get_crypto_price_in_usd(currency)
+    if crypto_price <= 0:
+        await message.answer("⚠️ Error getting live crypto price. Please try again later.", reply_markup=back("back_to_menu"))
+        return
+        
+    crypto_amount_exact = final_amount / crypto_price
+    # Format to 6 decimals
+    crypto_amount = crypto_amount_exact.quantize(Decimal('1.000000'))
 
-    if not btc_address:
+    # Get Crypto address
+    crypto_address = get_available_crypto_address(chain)
+
+    if not crypto_address:
         await message.answer(
             localize("order.payment.system_unavailable"),
             reply_markup=back("back_to_menu")
@@ -621,11 +493,13 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
                 buyer_id=user_id,
                 total_price=Decimal(str(total_amount)),
                 bonus_applied=bonus_applied,
-                payment_method="bitcoin",
+                payment_method="crypto",
                 delivery_address=customer_info.delivery_address,
                 phone_number=customer_info.phone_number,
                 delivery_note=customer_info.delivery_note or "",
-                bitcoin_address=btc_address,
+                crypto_address=crypto_address,
+                crypto_amount=crypto_amount,
+                crypto_currency=currency,
                 order_status="pending"
             )
             session.add(order)
@@ -641,7 +515,7 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
                 quantity = cart_item['quantity']
                 price = cart_item['price']
 
-                # Create OrderItem (without item_values - physical goods)
+                # Create OrderItem
                 order_item = OrderItem(
                     order_id=order.id,
                     item_name=item_name,
@@ -658,8 +532,8 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
                     'quantity': quantity
                 })
 
-            # Reserve inventory for this order (extended timeout for bitcoin - 7 days)
-            success, reserve_message = reserve_inventory(order.id, items_to_reserve, payment_method='bitcoin',
+            # Reserve inventory for this order (extended timeout for crypto - 7 days)
+            success, reserve_message = reserve_inventory(order.id, items_to_reserve, payment_method='crypto',
                                                          session=session)
             if not success:
                 session.rollback()
@@ -669,9 +543,9 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
                 )
                 return
 
-            # Mark Bitcoin address as used with this order
-            mark_bitcoin_address_used(btc_address, user_id, username, order.id, session=session,
-                                      order_code=order.order_code)
+            # Mark Crypto address as used with this order
+            mark_crypto_address_used(chain, crypto_address, user_id, username, order.id, session=session,
+                                     order_code=order.order_code)
 
             # Log order creation
             log_order_creation(
@@ -680,10 +554,10 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
                 buyer_username=username,
                 items_summary="\n".join(items_summary),
                 total_price=float(total_amount),
-                payment_method="bitcoin",
+                payment_method="crypto",
                 delivery_address=customer_info.delivery_address,
                 phone_number=customer_info.phone_number,
-                bitcoin_address=btc_address,
+                bitcoin_address=crypto_address, # Still using bitcoin_address field for retro-compatibility in log
                 order_code=order.order_code
             )
 
@@ -697,9 +571,10 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
             if metrics:
                 metrics.track_event("order_created", user_id, {
                     "order_code": order.order_code,
-                    "payment_method": "bitcoin",
+                    "payment_method": "crypto",
                     "total": float(total_amount),
-                    "bonus_applied": float(bonus_applied)
+                    "bonus_applied": float(bonus_applied),
+                    "crypto_currency": currency
                 })
                 # Track inventory reservation
                 for item in items_to_reserve:
@@ -717,7 +592,7 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
 
             # Send payment instructions to user
             payment_text = (
-                    localize("order.payment.bitcoin.title") + "\n\n" +
+                    f"💳 <b>{currency} Payment Instructions</b>\n\n" +
                     localize("order.payment.bitcoin.order_code", code=order.order_code) + "\n" +
                     localize("order.payment.subtotal_label", amount=total_amount, currency=EnvKeys.PAY_CURRENCY) + "\n"
             )
@@ -735,7 +610,7 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
 
             payment_text += (
                     localize("order.payment.bitcoin.items_title") + "\n"
-                                                                    f"{chr(10).join(items_summary)}\n\n" +
+                                                              f"{chr(10).join(items_summary)}\n\n" +
                     localize("order.payment.bitcoin.delivery_title") + "\n"
                                                                        f"📍 Address: {customer_info.delivery_address}\n"
                                                                        f"📞 Phone: {customer_info.phone_number}\n"
@@ -745,12 +620,10 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
                 payment_text += f"📝 Note: {customer_info.delivery_note}\n"
 
             payment_text += (
-                    "\n" + localize("order.payment.bitcoin.address_title") + "\n"
-                                                                             f"<code>{btc_address}</code>\n\n" +
-                    localize("order.payment.bitcoin.important_title") + "\n" +
-                    localize("order.payment.bitcoin.send_exact") + "\n" +
-                    localize("order.payment.bitcoin.one_time_address") + "\n" +
-                    localize("order.payment.bitcoin.admin_confirm") + "\n\n" +
+                    "\n📋 <b>Payment Details:</b>\n"
+                    f"Send exactly: <b>{crypto_amount} {currency}</b>\n"
+                    f"To Address: <code>{crypto_address}</code>\n\n"
+                    "⚠️ <i>Please send the exact amount. Do not use this address more than once. We will verify your transaction automatically.</i>\n\n" +
                     localize("order.payment.bitcoin.need_help")
             )
 
@@ -762,9 +635,11 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
             # Notify admin
             await notify_admin_new_order(
                 message.bot, order.order_code, user_id, username,
-                "\n".join(items_summary), total_amount, btc_address,
+                "\n".join(items_summary), total_amount, crypto_address,
                 customer_info.delivery_address, customer_info.phone_number,
-                customer_info.delivery_note or "", bonus_applied, final_amount
+                customer_info.delivery_note or "",
+                bonus_applied, final_amount,
+                crypto_currency=currency, crypto_amount=crypto_amount
             )
 
             # Sync customer CSV
@@ -776,7 +651,7 @@ async def process_bitcoin_payment_new_message(message: Message, state: FSMContex
             session.rollback()
             logger.error(f"Error creating orders: {e}")
             await message.answer(
-                localize("order.payment.error_general"),
+                localize("order.payment.creation_error"),
                 reply_markup=back("view_cart")
             )
             return
@@ -1004,11 +879,12 @@ async def process_cash_payment_new_message(message: Message, state: FSMContext, 
 
 
 async def notify_admin_new_order(bot, order_code: str, buyer_id: int, buyer_username: str,
-                                 items_summary: str, total_amount: Decimal, btc_address: str,
+                                 items_summary: str, total_amount: Decimal, crypto_address: str,
                                  delivery_address: str, phone_number: str, delivery_note: str,
-                                 bonus_applied: Decimal = Decimal('0'), final_amount: Decimal = None):
+                                 bonus_applied: Decimal = Decimal('0'), final_amount: Decimal = None,
+                                 crypto_currency: str = "BTC", crypto_amount: Decimal = Decimal('0')):
     """
-    Send notification to admin about new order
+    Send notification to admin about new crypto order
     """
     owner_id = EnvKeys.OWNER_ID
 
@@ -1021,7 +897,7 @@ async def notify_admin_new_order(bot, order_code: str, buyer_id: int, buyer_user
 
     try:
         admin_text = (
-                localize("admin.order.new_bitcoin_order") + "\n\n" +
+                f"🆕 <b>New {crypto_currency} Order</b>\n\n" +
                 localize("admin.order.order_label", code=html.escape(order_code)) + "\n" +
                 localize("admin.order.customer_label", username=html.escape(buyer_username), id=buyer_id) + "\n" +
                 localize("admin.order.subtotal_label", amount=html.escape(str(total_amount)),
@@ -1049,8 +925,9 @@ async def notify_admin_new_order(bot, order_code: str, buyer_id: int, buyer_user
             admin_text += f"📝 Note: {html.escape(delivery_note)}\n"
 
         admin_text += (
-                f"\n<b>Payment:</b>\n" +
-                localize("admin.order.bitcoin_address_label", address=html.escape(btc_address)) + "\n\n" +
+                f"\n<b>Payment Details:</b>\n" +
+                f"Amount: <b>{crypto_amount} {crypto_currency}</b>\n" +
+                f"Address: <code>{html.escape(crypto_address)}</code>\n\n" +
                 localize("admin.order.awaiting_payment_status")
         )
 

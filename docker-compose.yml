@@ -71,6 +71,10 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./btc_addresses.txt:/app/btc_addresses.txt:ro
+      - ./eth_addresses.txt:/app/eth_addresses.txt:ro
+      - ./ltc_addresses.txt:/app/ltc_addresses.txt:ro
+      - ./sol_addresses.txt:/app/sol_addresses.txt:ro
+      - ./trx_addresses.txt:/app/trx_addresses.txt:ro
     depends_on:
       db:
         condition: service_healthy
