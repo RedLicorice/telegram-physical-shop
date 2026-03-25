@@ -5,6 +5,7 @@ from bot.database.models.main import Order, User
 from bot.payments.checkers import PaymentCheckerFactory
 from bot.config import EnvKeys
 from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,10 @@ async def run_payment_checker():
     Checks every 60 seconds.
     """
     logger.info("Payment checker task started")
-    bot = Bot(token=EnvKeys.TOKEN, parse_mode="HTML")
+    bot = Bot(
+        token=EnvKeys.TOKEN,
+        default=DefaultBotProperties(parse_mode="HTML")
+    )
 
     while True:
         try:

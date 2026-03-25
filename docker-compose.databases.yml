@@ -8,10 +8,10 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-    test: [ "CMD", "redis-cli", "ping" ]
-    interval: 5s
-    timeout: 3s
-    retries: 5
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
     networks:
       - bot_network
@@ -36,8 +36,8 @@ services:
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
-    timeout: 5s
-    retries: 10
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
     networks:
       - bot_network
