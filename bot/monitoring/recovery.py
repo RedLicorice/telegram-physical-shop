@@ -4,7 +4,8 @@ from datetime import datetime
 from sqlalchemy import func
 
 from bot.database import Database
-from bot.database.models.main import BitcoinAddress
+from bot.database.models.main import CryptoAddress
+from bot.payments.crypto import CHAIN_FILES
 
 logger = logging.getLogger(__name__)
 
@@ -161,8 +162,8 @@ class RecoveryManager:
                 except Exception as e:
                     logger.error(f"Telegram API check failed: {e}")
 
-                # Check Bitcoin address pool (every check)
-                await self.check_bitcoin_address_pool()
+                # Check crypto address pools (every check)
+                await self.check_crypto_address_pools()
 
             except Exception as e:
                 logger.error(f"Health check error: {e}", exc_info=True)
@@ -198,23 +199,24 @@ class RecoveryManager:
 
         return False
 
-    async def check_bitcoin_address_pool(self):
-        """Check Bitcoin address pool and alert if low"""
+    async def check_crypto_address_pools(self):
+        """Check all Crypto address pools and alert if low"""
         try:
             with Database().session() as s:
-                # Check available Bitcoin addresses using SQLAlchemy ORM
-                available = s.query(func.count(BitcoinAddress.address)).filter(
-                    BitcoinAddress.is_used == False
-                ).scalar()
+                for chain in CHAIN_FILES:
+                    # Check available addresses for this chain using SQLAlchemy ORM
+                    available = s.query(func.count(CryptoAddress.id)).filter(
+                        CryptoAddress.chain == chain,
+                        CryptoAddress.is_used == False
+                    ).scalar()
 
-                if available < 5:
-                    logger.critical(f"CRITICAL: Bitcoin address pool critically low! Only {available} addresses available")
-                    # Could send notification to admin here
-                elif available < 10:
-                    logger.warning(f"WARNING: Bitcoin address pool running low: {available} addresses available")
+                    if available < 5:
+                        logger.critical(f"CRITICAL: {chain} address pool critically low! Only {available} addresses available")
+                    elif available < 10:
+                        logger.warning(f"WARNING: {chain} address pool running low: {available} addresses available")
 
         except Exception as e:
-            logger.error(f"Error checking Bitcoin address pool: {e}")
+            logger.error(f"Error checking crypto address pools: {e}")
 
 
 class StateManager:
