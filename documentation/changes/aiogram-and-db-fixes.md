@@ -29,7 +29,15 @@ These columns are now automatically created on fresh database starts via SQLAlch
 ### 3. Recovery Manager Enhancements
 Refactored the [RecoveryManager](file:///c:/Users/giuse/repos/telegram-physical-shop/bot/monitoring/recovery.py#13-220) in [recovery.py](file:///c:/Users/giuse/repos/telegram-physical-shop/bot/monitoring/recovery.py) to monitor address pools for ALL supported chains (BTC, ETH, LTC, SOL, TRX) instead of just Bitcoin. This ensures that administrators receive appropriate warnings regardless of the currency being used.
 
-### 4. Docker Infrastructure Fixes
+### 4. Global Testnet Support
+Added a `USE_TESTNET` toggle in [.env](file:///c:/Users/giuse/repos/telegram-physical-shop/.env) to switch all payment verification to cryptocurrency testnets/devnets.
+- **BTC**: Switches to `blockstream.info/testnet`
+- **ETH**: Switches to `Sepolia` testnet
+- **LTC**: Switches to `Blockcypher Test3`
+- **SOL**: Switches to `Solana Devnet`
+- **TRX**: Switches to `Tron Nile` testnet
+
+### 5. Docker Infrastructure Fixes
 - **Healthcheck Syntax**: Fixed indentation and syntax errors in [docker-compose.databases.yml](file:///c:/Users/giuse/repos/telegram-physical-shop/docker-compose.databases.yml).
 - **Network Creation**: Ensured the `legendsnet` Docker network exists to allow containers to communicate.
 - **Line Endings**: Updated the [Dockerfile](file:///c:/Users/giuse/repos/telegram-physical-shop/Dockerfile) to handle potential Windows CRLF line endings in the entrypoint script, preventing `no such file or directory` errors.

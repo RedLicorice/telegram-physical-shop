@@ -4,6 +4,8 @@ import aiohttp
 from decimal import Decimal
 from bot.payments.checkers.base import BaseChecker
 
+from bot.config.env import EnvKeys
+
 logger = logging.getLogger(__name__)
 
 SPL_TOKENS = {
@@ -19,8 +21,14 @@ SPL_TOKENS = {
 
 class SolanaChecker(BaseChecker):
     def __init__(self):
-        # Allow custom RPC via environment variable, fallback to mainnet-beta
-        self.rpc_url = os.getenv('SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com')
+        # Allow custom RPC via environment variable
+        env_rpc = os.getenv('SOLANA_RPC_URL')
+        if env_rpc:
+            self.rpc_url = env_rpc
+        elif EnvKeys.USE_TESTNET:
+            self.rpc_url = 'https://api.devnet.solana.com'
+        else:
+            self.rpc_url = 'https://api.mainnet-beta.solana.com'
 
     async def check_payment(self, address: str, expected_amount: Decimal, currency: str, **kwargs) -> bool:
         if currency == 'SOL':

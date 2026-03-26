@@ -3,11 +3,16 @@ import aiohttp
 from decimal import Decimal
 from bot.payments.checkers.base import BaseChecker
 
+from bot.config.env import EnvKeys
+
 logger = logging.getLogger(__name__)
 
 class LitecoinChecker(BaseChecker):
     def __init__(self):
-        self.base_url = "https://api.blockcypher.com/v1/ltc/main/addrs"
+        if EnvKeys.USE_TESTNET:
+            self.base_url = "https://api.blockcypher.com/v1/ltc/test3/addrs"
+        else:
+            self.base_url = "https://api.blockcypher.com/v1/ltc/main/addrs"
 
     async def check_payment(self, address: str, expected_amount: Decimal, currency: str = 'LTC', **kwargs) -> bool:
         """

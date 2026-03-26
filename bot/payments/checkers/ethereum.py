@@ -4,9 +4,12 @@ import aiohttp
 from decimal import Decimal
 from bot.payments.checkers.base import BaseChecker
 
+from bot.config.env import EnvKeys
+
 logger = logging.getLogger(__name__)
 
 # Constants for ERC20 Tokens (Decimals and Contract Addresses)
+# Note: These are mainnet addresses. Testnet equivalents may vary.
 ERC20_TOKENS = {
     'USDT-ERC20': {
         'contract': '0xdac17f958d2ee523a2206206994597c13d831ec7',
@@ -21,7 +24,11 @@ ERC20_TOKENS = {
 class EthereumChecker(BaseChecker):
     def __init__(self):
         self.api_key = os.getenv('ETHERSCAN_API_KEY', '')
-        self.base_url = "https://api.etherscan.io/api"
+        if EnvKeys.USE_TESTNET:
+            # Using Sepolia as the default testnet
+            self.base_url = "https://api-sepolia.etherscan.io/api"
+        else:
+            self.base_url = "https://api.etherscan.io/api"
 
     async def check_payment(self, address: str, expected_amount: Decimal, currency: str, **kwargs) -> bool:
         if currency == 'ETH':

@@ -13,6 +13,7 @@ class EnvKeys(ABC):
     PAY_CURRENCY: Final = os.getenv("PAY_CURRENCY", "USD")
     MIN_AMOUNT: Final = int(os.getenv("MIN_AMOUNT", 20))
     MAX_AMOUNT: Final = int(os.getenv("MAX_AMOUNT", 10_000))
+    USE_TESTNET: Final = os.getenv("USE_TESTNET", "0") == "1"
 
     # Links / UI
     CHANNEL_URL: Final = os.getenv("CHANNEL_URL")
