@@ -12,9 +12,9 @@
   - Replaced the hardcoded Bitcoin selection flow with a dynamic interface for multiple currencies.
   - Developed `prices.py` to calculate accurate real-time crypto-to-USD conversion rates using Binance API.
 - **File Watcher, CLI & Infrastructure Updates**:
-  - `bot/tasks/file_watcher.py` now monitors independent address files (`btc_addresses.txt`, `eth_addresses.txt`, etc.).
+  - `bot/tasks/file_watcher.py` now monitors independent address files in `config/` (`btc_addresses.txt`, `eth_addresses.txt`, etc.).
   - Upgraded `bot_cli.py` to provide subcommands specifically for adding and listing multi-crypto addresses (`crypto add --chain ETH`).
-  - Updated `docker-compose.yml` to automatically mount the new crypto address files into the container alongside `btc_addresses.txt`.
+  - Updated `docker-compose.yml` to automatically mount the `config/` directory into the container.
 
 ## Testing & Validation
 - **Syntax & Compilation Verification**: Successfully compiled all modified files using `python -m py_compile`. 
@@ -22,5 +22,5 @@
 
 ## Next Steps for the User
 1. Ensure your `.env` contains optional API keys for increased stability: `ETHERSCAN_API_KEY`, `TRONGRID_API_KEY`, `SOLANA_RPC_URL`.
-2. Populate the text files (e.g., `eth_addresses.txt`, `trx_addresses.txt`) with your desired receiving addresses. The bot will auto-load them as configured.
+2. Populate the text files in the `config/` folder (e.g., `config/eth_addresses.txt`, `config/trx_addresses.txt`) with your desired receiving addresses. The bot will auto-load them as configured.
 3. Start the bot and perform an end-to-end test order to ensure your preferred UI flow displays properly and Binance price conversion is smooth.

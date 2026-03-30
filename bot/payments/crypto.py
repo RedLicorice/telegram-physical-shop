@@ -9,11 +9,11 @@ from bot.export.custom_logging import log_bitcoin_address_assigned
 
 # Mapping of chains to their respective address files
 CHAIN_FILES = {
-    'BTC': Path("btc_addresses.txt"),
-    'ETH': Path("eth_addresses.txt"),
-    'LTC': Path("ltc_addresses.txt"),
-    'SOL': Path("sol_addresses.txt"),
-    'TRX': Path("trx_addresses.txt"),
+    'BTC': Path("config/btc_addresses.txt"),
+    'ETH': Path("config/eth_addresses.txt"),
+    'LTC': Path("config/ltc_addresses.txt"),
+    'SOL': Path("config/sol_addresses.txt"),
+    'TRX': Path("config/trx_addresses.txt"),
 }
 
 # A lock per chain for thread-safe file operations

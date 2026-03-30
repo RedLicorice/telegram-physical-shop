@@ -838,9 +838,9 @@ class MonitoringServer:
             is_running = watcher_instance.is_running() if watcher_instance else False
 
             watcher_status = {
-                "name": "Bitcoin Address File Watcher",
+                "name": "Crypto Address File Watcher",
                 "status": "running" if is_running else "not started",
-                "description": "Monitors btc_addresses.txt for changes and reloads addresses",
+                "description": "Monitors address files in config/ for changes and reloads addresses",
                 "metrics": {}
             }
             tasks_status.append(watcher_status)

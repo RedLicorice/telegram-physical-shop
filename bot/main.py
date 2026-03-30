@@ -24,6 +24,7 @@ from bot.tasks import start_file_watcher, stop_file_watcher
 recovery_manager = None
 monitoring_server = None
 cache_scheduler = None
+address_feeder = None
 
 
 def initialize_database() -> None:
@@ -76,6 +77,13 @@ async def __on_start_up(dp: Dispatcher, bot: Bot) -> None:
     from bot.tasks.payment_checker import start_payment_checker
     start_payment_checker()
     logging.info("💸 Payment checker started - checking block explorers every 60s")
+
+    # Start address feeder task
+    global address_feeder
+    from bot.tasks.address_feeder import AddressFeederTask
+    address_feeder = AddressFeederTask(interval=3600)  # Check every hour
+    asyncio.create_task(address_feeder.run())
+    logging.info("♻️ Address feeder task started - will replenish pools if auto-feed is enabled")
 
     # Setting Rate Limiting
     rate_config = RateLimitConfig(
@@ -145,7 +153,7 @@ async def __on_start_up(dp: Dispatcher, bot: Bot) -> None:
 
 async def __on_shutdown(dp: Dispatcher, bot: Bot) -> None:
     """Initialize bot shutdown"""
-    global recovery_manager, monitoring_server
+    global recovery_manager, monitoring_server, address_feeder
 
     logging.info("Starting shutdown...")
 
@@ -171,6 +179,11 @@ async def __on_shutdown(dp: Dispatcher, bot: Bot) -> None:
     # Monitoring server stop
     if monitoring_server:
         await monitoring_server.stop()
+
+    # Address feeder stop
+    if address_feeder:
+        address_feeder.stop()
+        logging.info("♻️ Address feeder task stopped")
 
     logging.info("Shutdown completed")
 

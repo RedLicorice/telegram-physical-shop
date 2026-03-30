@@ -22,7 +22,8 @@ from bot.database.methods.update import ban_user, unban_user
 from bot.database.methods.inventory import deduct_inventory, release_reservation, add_inventory, reserve_inventory
 from bot.database.methods.read import get_reference_bonus_percent
 from bot.referrals.codes import create_reference_code, deactivate_reference_code
-from bot.payments.crypto import add_crypto_address, add_crypto_addresses_bulk, get_crypto_address_stats
+from bot.payments.crypto import add_crypto_address, add_crypto_addresses_bulk, get_crypto_address_stats, CHAIN_FILES
+from bot.payments.wallets import WalletManager
 from bot.export.customer_csv import (
     update_customer_spendings,
     sync_all_customers_to_csv,
@@ -964,6 +965,90 @@ def list_crypto_addresses_cli(args):
                     print(f"{addr.address:<45} {status:<10} {used_by:<15}")
 
 
+def wallet_generate_cli(args):
+    """Generate a new wallet keypair"""
+    chain = args.chain.upper()
+    manager = WalletManager()
+    try:
+        mnemonic, pub, priv = manager.generate_keypair(chain)
+        print(f"✅ Successfully generated {chain} wallet!")
+        print(f"Mnemonic: {mnemonic}")
+        print(f"Public Key (XPUB/Address): {pub}")
+        print(f"Private keys saved to: {manager.get_private_file(chain)}")
+        print(f"Public key saved to: {manager.get_public_file(chain)}")
+        print("\n⚠️  KEEP YOUR MNEMONIC AND PRIVATE KEY SAFE AND SECRET!")
+    except Exception as e:
+        print(f"❌ Failed to generate {chain} wallet: {e}")
+
+
+def wallet_show_cli(args):
+    """Show the current public key for a chain"""
+    chain = args.chain.upper()
+    manager = WalletManager()
+    pub = manager.get_public_key(chain)
+    if pub:
+        print(f"Chain: {chain}")
+        print(f"Public Key: {pub}")
+    else:
+        print(f"❌ No public key found for {chain}. Use 'generate' first.")
+
+
+def wallet_feed_cli(args):
+    """Manually feed addresses from the BIP wallet"""
+    chain = args.chain.upper()
+    count = args.count
+    manager = WalletManager()
+    
+    try:
+        # Get last index from database
+        with Database().session() as session:
+            from bot.database.models.main import BotSettings
+            last_index_key = f"wallet_last_index_{chain.lower()}"
+            setting = session.query(BotSettings).filter_by(setting_key=last_index_key).first()
+            last_index = int(setting.setting_value if setting else "0")
+            
+            print(f"Deriving {count} addresses for {chain} starting from index {last_index}...")
+            addresses = manager.derive_addresses(chain, last_index, count)
+            
+            if addresses:
+                added = add_crypto_addresses_bulk(chain, addresses)
+                print(f"✅ Added {added} new {chain} address(es) to the pool.")
+                
+                # Update last index
+                if setting:
+                    setting.setting_value = str(last_index + count)
+                else:
+                    new_setting = BotSettings(setting_key=last_index_key, setting_value=str(last_index + count))
+                    session.add(new_setting)
+                session.commit()
+            else:
+                print("❌ No addresses derived.")
+                
+    except FileNotFoundError:
+        print(f"❌ Public key for {chain} not found. Generate one or add it manually to config/wallets/{chain.lower()}.public.txt")
+    except Exception as e:
+        print(f"❌ Failed to feed addresses: {e}")
+
+
+def wallet_import_cli(args):
+    """Import an existing mnemonic or public key"""
+    chain = args.chain.upper()
+    mnemonic = args.mnemonic
+    public_key = args.public_key
+    manager = WalletManager()
+    
+    try:
+        pub = manager.import_wallet(chain, mnemonic, public_key)
+        print(f"✅ Successfully imported {chain} wallet!")
+        print(f"Public Key: {pub}")
+        if mnemonic:
+            print(f"Mnemonic saved to: {manager.get_private_file(chain)}")
+        else:
+            print("⚠️ Only Public Key imported. Private key is NOT available for this chain.")
+    except Exception as e:
+        print(f"❌ Failed to import wallet: {e}")
+
+
 def update_inventory(args):
     """Update item inventory using new stock management system"""
     with Database().session() as session:
@@ -1397,6 +1482,33 @@ def main():
     list_crypto.add_argument('--chain', required=True, help='Blockchain (e.g., BTC, ETH, SOL, TRX)')
     list_crypto.add_argument('--show-all', action='store_true', help='Show all addresses')
     list_crypto.set_defaults(func=list_crypto_addresses_cli)
+
+    # Wallet management under crypto
+    wallet_parser = crypto_sub.add_parser('wallet', help='BIP Wallet management')
+    wallet_sub = wallet_parser.add_subparsers(dest='wallet_command')
+
+    # Generate wallet
+    gen_wallet = wallet_sub.add_parser('generate', help='Generate a new wallet keypair')
+    gen_wallet.add_argument('--chain', required=True, help='Blockchain (BTC, ETH, SOL, TRX, LTC)')
+    gen_wallet.set_defaults(func=wallet_generate_cli)
+
+    # Show wallet
+    show_wallet = wallet_sub.add_parser('show', help='Show public key')
+    show_wallet.add_argument('--chain', required=True, help='Blockchain')
+    show_wallet.set_defaults(func=wallet_show_cli)
+
+    # Feed addresses
+    feed_wallet = wallet_sub.add_parser('feed', help='Manually feed addresses')
+    feed_wallet.add_argument('--chain', required=True, help='Blockchain')
+    feed_wallet.add_argument('--count', type=int, default=10, help='Number of addresses to derive')
+    feed_wallet.set_defaults(func=wallet_feed_cli)
+
+    # Import wallet
+    import_wallet = wallet_sub.add_parser('import', help='Import an existing wallet')
+    import_wallet.add_argument('--chain', required=True, help='Blockchain')
+    import_wallet.add_argument('--mnemonic', help='12 or 24 word mnemonic')
+    import_wallet.add_argument('--public-key', help='Extended Public Key (XPUB/etc) or Solana address')
+    import_wallet.set_defaults(func=wallet_import_cli)
 
     # Update inventory
     inv_parser = subparsers.add_parser('inventory', help='Update item inventory')

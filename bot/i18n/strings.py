@@ -296,6 +296,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # === Additional Common Buttons ===
         "btn.cart": "🛒 Корзина",
         "btn.my_orders": "📦 Мои заказы",
+        "btn.wallets": "💼 Управление кошельками",
         "btn.reference_codes": "🔑 Реферальные коды",
         "btn.settings": "⚙️ Настройки",
         "btn.referral_bonus_percent": "💰 Процент реферального бонуса",
@@ -808,6 +809,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # === Additional Common Buttons ===
         "btn.cart": "🛒 Cart",
         "btn.my_orders": "📦 My Orders",
+        "btn.wallets": "💼 Wallet Management",
         "btn.reference_codes": "🔑 Reference Codes",
         "btn.settings": "⚙️ Settings",
         "btn.referral_bonus_percent": "💰 Referral Bonus %",

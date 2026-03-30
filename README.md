@@ -84,11 +84,11 @@ This is NOT a typical digital goods Telegram shop. Key differences:
 
 #### 1. Bitcoin Payments
 
-- **Address Pool**: Load Bitcoin addresses from `btc_addresses.txt`
+- **Address Pool**: Load Bitcoin addresses from `config/btc_addresses.txt`
 - **One-Time Use**: Each address used only once per order
 - **Auto-Reload**: File watcher automatically loads new addresses when file changes
 - **Usage Tracking**: Complete address usage audit trail in database
-- **Critical**: Must add addresses to `btc_addresses.txt` before accepting Bitcoin orders
+- **Critical**: Must add addresses to `config/btc_addresses.txt` before accepting Bitcoin orders
 
 #### 2. Cash on Delivery (COD)
 
@@ -149,7 +149,12 @@ This is NOT a typical digital goods Telegram shop. Key differences:
 telegram_shop/
 ├── run.py                          # Entry point
 ├── bot_cli.py                      # CLI admin tool
-├── btc_addresses.txt               # Bitcoin address pool
+├── config/                         # Configuration folder
+│   ├── btc_addresses.txt           # Bitcoin address pool
+│   ├── eth_addresses.txt           # Ethereum address pool
+│   ├── ltc_addresses.txt           # Litecoin address pool
+│   ├── sol_addresses.txt           # Solana address pool
+│   └── trx_addresses.txt           # Tron address pool
 ├── requirements.txt                # Python dependencies
 ├── Dockerfile                      # Docker image definition
 ├── docker-compose.yml              # Multi-container setup
@@ -233,7 +238,7 @@ telegram_shop/
 │   │
 │   ├── tasks/                      # Background tasks
 │   │   ├── reservation_cleaner.py  # Expire old reservations
-│   │   └── file_watcher.py         # Watch btc_addresses.txt
+│   │   └── file_watcher.py         # Watch config/ folder
 │   │
 │   ├── caching/                    # Caching layer
 │   │   ├── cache.py                # CacheManager & decorators
@@ -454,7 +459,7 @@ DATABASE_URL = "postgresql+psycopg2://user:password@localhost:5432/db_name"
 
 3. **Add Bitcoin addresses** (Required ONLY if accepting Bitcoin payments)
    ```bash
-   nano btc_addresses.txt
+   nano config/btc_addresses.txt
    # Add your Bitcoin addresses, one per line:
    # bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
    # bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
@@ -508,7 +513,7 @@ DATABASE_URL = "postgresql+psycopg2://user:password@localhost:5432/db_name"
 
 6. **Add Bitcoin addresses** (optional - only if accepting Bitcoin)
    ```bash
-   nano btc_addresses.txt
+   nano config/btc_addresses.txt
    # Add addresses as shown above
    # Skip if using cash on delivery only
    ```
@@ -778,7 +783,7 @@ Runs every 60 seconds to:
 
 **File**: `bot/tasks/file_watcher.py`
 
-Monitors `btc_addresses.txt` for changes:
+Monitors `config/*.txt` for changes:
 
 - Watches file for modifications
 - Debounces rapid changes (2-second default)

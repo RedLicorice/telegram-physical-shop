@@ -49,6 +49,7 @@ def admin_console_keyboard() -> InlineKeyboardMarkup:
     kb.button(text=localize("admin.menu.categories"), callback_data="categories_management")
     kb.button(text=localize("admin.menu.users"), callback_data="user_management")
     kb.button(text=localize("btn.reference_codes"), callback_data="admin_refcode_management")
+    kb.button(text=localize("btn.wallets"), callback_data="wallet_management")
     kb.button(text=localize("btn.settings"), callback_data="settings_management")
     kb.button(text=localize("admin.menu.broadcast"), callback_data="send_message")
     kb.button(text=localize("btn.back"), callback_data="back_to_menu")
@@ -66,6 +67,22 @@ def settings_management_keyboard() -> InlineKeyboardMarkup:
     kb.button(text=localize("btn.timezone"), callback_data="setting_timezone")
     kb.button(text=localize("btn.back"), callback_data="console")
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def wallet_management_keyboard(chains: Iterable[str], auto_feed: bool) -> InlineKeyboardMarkup:
+    """
+    Wallet management keyboard.
+    """
+    kb = InlineKeyboardBuilder()
+    for chain in chains:
+        kb.button(text=f"🔄 Feed {chain}", callback_data=f"wallet_feed:{chain}")
+    
+    auto_feed_text = "✅ Auto-Feed: ON" if auto_feed else "❌ Auto-Feed: OFF"
+    kb.button(text=auto_feed_text, callback_data="wallet_toggle_autofeed")
+    
+    kb.button(text=localize("btn.back"), callback_data="console")
+    kb.adjust(2, 1, 1)
     return kb.as_markup()
 
 

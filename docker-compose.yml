@@ -25,11 +25,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      - ./btc_addresses.txt:/app/btc_addresses.txt:rw
-      - ./eth_addresses.txt:/app/eth_addresses.txt:rw
-      - ./ltc_addresses.txt:/app/ltc_addresses.txt:rw
-      - ./sol_addresses.txt:/app/sol_addresses.txt:rw
-      - ./trx_addresses.txt:/app/trx_addresses.txt:rw
+      - ./config:/app/config:rw
       # depends_on:
       # db:
       # condition: service_healthy

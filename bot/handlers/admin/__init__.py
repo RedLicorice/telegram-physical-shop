@@ -8,6 +8,7 @@ from .update_position_states import router as update_position_router
 from .user_management_states import router as user_management_router
 from .reference_code_management import router as reference_code_management_router
 from .settings_management import router as settings_management_router
+from .wallets import router as wallets_router
 
 from aiogram import Router
 
@@ -15,6 +16,7 @@ router = Router()
 router.include_router(main_router)
 router.include_router(reference_code_management_router)
 router.include_router(settings_management_router)
+router.include_router(wallets_router)
 router.include_router(adding_position_states_router)
 router.include_router(broadcast_router)
 router.include_router(categories_management_router)

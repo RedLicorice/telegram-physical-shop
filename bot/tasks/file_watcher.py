@@ -82,9 +82,8 @@ class CryptoAddressFileWatcher:
 
     def __init__(self, debounce_seconds: float = 2.0):
         self.watch_files = CHAIN_FILES
-        # All files are assumed to be in the root directory (same as bot_cli.py)
-        # Using the parent directory of the first file (or current working directory)
-        self.watch_directory = Path('.').resolve()
+        # All files are now in the config/ directory
+        self.watch_directory = Path('config').resolve()
         self.debounce_seconds = debounce_seconds
 
         self.observer: Optional[Observer] = None
