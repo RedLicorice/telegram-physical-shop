@@ -8,13 +8,7 @@ from bot.config.env import EnvKeys
 logger = logging.getLogger(__name__)
 
 class BitcoinChecker(BaseChecker):
-    def __init__(self):
-        if EnvKeys.USE_TESTNET:
-            self.base_url = "https://blockstream.info/testnet/api"
-        else:
-            self.base_url = "https://blockstream.info/api"
-
-    async def check_payment(self, address: str, expected_amount: Decimal, currency: str = 'BTC', **kwargs) -> bool:
+    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, use_testnet: bool, **kwargs) -> bool:
         """
         Check Bitcoin payment using blockstream.info API.
         Since we generate a new address for each order, we can check `funded_txo_sum` 
@@ -24,8 +18,10 @@ class BitcoinChecker(BaseChecker):
             logger.error(f"BitcoinChecker cannot check currency {currency}")
             return False
 
+        base_url = "https://blockstream.info/testnet/api" if use_testnet else "https://blockstream.info/api"
+
         try:
-            url = f"{self.base_url}/address/{address}"
+            url = f"{base_url}/address/{address}"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:

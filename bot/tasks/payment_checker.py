@@ -50,7 +50,8 @@ async def check_pending_payments(bot: Bot):
                 is_paid = await checker.check_payment(
                     address=order.crypto_address,
                     expected_amount=order.crypto_amount,
-                    currency=order.crypto_currency
+                    currency=order.crypto_currency,
+                    use_testnet=order.use_testnet
                 )
 
                 if is_paid:

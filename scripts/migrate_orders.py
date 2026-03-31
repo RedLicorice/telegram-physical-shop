@@ -36,7 +36,8 @@ def migrate():
         new_columns = [
             ("crypto_currency", "VARCHAR(20)"),
             ("crypto_amount", "NUMERIC(20, 8)"),
-            ("crypto_address", "VARCHAR(150)")
+            ("crypto_address", "VARCHAR(150)"),
+            ("use_testnet", "BOOLEAN DEFAULT FALSE")
         ]
         
         existing_columns = [c['name'] for c in inspector.get_columns(target_table)]

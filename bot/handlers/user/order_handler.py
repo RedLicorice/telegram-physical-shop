@@ -500,7 +500,8 @@ async def process_crypto_payment_new_message(message: Message, state: FSMContext
                 crypto_address=crypto_address,
                 crypto_amount=crypto_amount,
                 crypto_currency=currency,
-                order_status="pending"
+                order_status="pending",
+                use_testnet=EnvKeys.USE_TESTNET
             )
             session.add(order)
             session.flush()  # Get the order ID
@@ -592,7 +593,13 @@ async def process_crypto_payment_new_message(message: Message, state: FSMContext
 
             # Send payment instructions to user
             payment_text = (
-                    f"💳 <b>{currency} Payment Instructions</b>\n\n" +
+                    f"💳 <b>{currency} Payment Instructions</b>\n\n"
+            )
+
+            if EnvKeys.USE_TESTNET:
+                payment_text += "❗ <b>TESTNET PAYMENT</b> ❗\n<i>Please ensure you are sending on the appropriate Testnet!</i>\n\n"
+
+            payment_text += (
                     localize("order.payment.bitcoin.order_code", code=order.order_code) + "\n" +
                     localize("order.payment.subtotal_label", amount=total_amount, currency=EnvKeys.PAY_CURRENCY) + "\n"
             )

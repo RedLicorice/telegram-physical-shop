@@ -9,7 +9,7 @@ class BaseChecker(ABC):
     """
 
     @abstractmethod
-    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, **kwargs) -> bool:
+    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, use_testnet: bool, **kwargs) -> bool:
         """
         Check if the expected amount has been received on the given address.
         

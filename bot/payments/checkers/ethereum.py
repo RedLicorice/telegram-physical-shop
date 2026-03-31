@@ -24,13 +24,14 @@ ERC20_TOKENS = {
 class EthereumChecker(BaseChecker):
     def __init__(self):
         self.api_key = os.getenv('ETHERSCAN_API_KEY', '')
-        if EnvKeys.USE_TESTNET:
+
+    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, use_testnet: bool, **kwargs) -> bool:
+        if use_testnet:
             # Using Sepolia as the default testnet
             self.base_url = "https://api-sepolia.etherscan.io/api"
         else:
             self.base_url = "https://api.etherscan.io/api"
 
-    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, **kwargs) -> bool:
         if currency == 'ETH':
             return await self._check_eth(address, expected_amount)
         elif currency in ERC20_TOKENS:

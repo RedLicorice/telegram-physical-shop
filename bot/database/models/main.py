@@ -295,6 +295,7 @@ class Order(Database.BASE):
     delivery_time = Column(DateTime(timezone=True), nullable=True)  # Planned delivery time set by admin
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    use_testnet = Column(Boolean, default=False)
 
     buyer = relationship("User", foreign_keys=lambda: [Order.buyer_id])
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
@@ -311,7 +312,8 @@ class Order(Database.BASE):
                  bitcoin_address: str = None, crypto_currency: str = None,
                  crypto_amount=None, crypto_address: str = None,
                  order_status: str = 'pending', order_code: str = None, 
-                 reserved_until=None, delivery_time=None, bonus_applied=0, **kw: Any):
+                 reserved_until=None, delivery_time=None, bonus_applied=0,
+                 use_testnet: bool = False, **kw: Any):
         super().__init__(**kw)
         self.buyer_id = buyer_id
         self.order_code = order_code
@@ -328,6 +330,7 @@ class Order(Database.BASE):
         self.order_status = order_status
         self.reserved_until = reserved_until
         self.delivery_time = delivery_time
+        self.use_testnet = use_testnet
 
 
 class OrderItem(Database.BASE):

@@ -5,8 +5,7 @@ from bip_utils import (
     Bip39MnemonicGenerator, Bip39SeedGenerator, Bip39WordsNum,
     Bip44, Bip44Coins, Bip44Changes,
     Bip49, Bip49Coins,
-    Bip84, Bip84Coins,
-    Solana, SolanaCoins
+    Bip84, Bip84Coins
 )
 
 class WalletManager:
@@ -19,7 +18,7 @@ class WalletManager:
         "BTC": {"class": Bip84, "coin": Bip84Coins.BITCOIN},
         "ETH": {"class": Bip44, "coin": Bip44Coins.ETHEREUM},
         "LTC": {"class": Bip84, "coin": Bip84Coins.LITECOIN},
-        "SOL": {"class": Solana, "coin": SolanaCoins.SOLANA},
+        "SOL": {"class": Bip44, "coin": Bip44Coins.SOLANA},
         "TRX": {"class": Bip44, "coin": Bip44Coins.TRON},
     }
 
@@ -55,20 +54,11 @@ class WalletManager:
         bip_obj = config["class"].FromSeed(seed_bytes, config["coin"])
         
         # 4. Get Master Public/Private keys (Extended keys if supported)
-        if chain == "SOL":
-            # Solana doesn't use "Extended" keys in the same way as BTC/ETH in bip-utils
-            # We'll use the derived account 0 for simplicity if using standard BIP44
-            # Usually users expect the mnemonic for Solana.
-            # We'll store the public key and mnemonic.
-            # For derivation, we'll need the Bip44 object.
-            public_key = bip_obj.PublicKey().ToExtended()
-            private_key = bip_obj.PrivateKey().ToExtended()
-        else:
-            # BTC/ETH/LTC/TRX use Account 0, Change 0 (Internal/External)
-            # We derive Account 0 to get the XPUB that can derive addresses.
-            account_0 = bip_obj.Purpose().Coin().Account(0)
-            public_key = account_0.PublicKey().ToExtended()
-            private_key = account_0.PrivateKey().ToExtended()
+        # BTC/ETH/LTC/TRX/SOL all use Account 0, Change 0 (Internal/External)
+        # We derive Account 0 to get the XPUB that can derive addresses.
+        account_0 = bip_obj.Purpose().Coin().Account(0)
+        public_key = account_0.PublicKey().ToExtended()
+        private_key = account_0.PrivateKey().ToExtended()
 
         # Save to files
         self._save_keys(chain, mnemonic, public_key, private_key)
@@ -93,13 +83,9 @@ class WalletManager:
             seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
             bip_obj = config["class"].FromSeed(seed_bytes, config["coin"])
             
-            if chain == "SOL":
-                derived_pub = bip_obj.PublicKey().ToExtended()
-                derived_priv = bip_obj.PrivateKey().ToExtended()
-            else:
-                account_0 = bip_obj.Purpose().Coin().Account(0)
-                derived_pub = account_0.PublicKey().ToExtended()
-                derived_priv = account_0.PrivateKey().ToExtended()
+            account_0 = bip_obj.Purpose().Coin().Account(0)
+            derived_pub = account_0.PublicKey().ToExtended()
+            derived_priv = account_0.PrivateKey().ToExtended()
             
             # If public_key was also provided, verify it matches
             if public_key and public_key != derived_pub:
@@ -157,29 +143,14 @@ class WalletManager:
         config = self.CHAIN_CONFIG[chain]
         
         # Reconstruct Bip object from Extended Public Key
-        # Note: If it's an XPUB, it can only derive child public keys (addresses)
-        if chain == "SOL":
-            # Solana handling
-            bip_obj = config["class"].FromExtendedKey(extended_pub_key, config["coin"])
-        else:
-            # BTC/ETH/LTC/TRX
-            # The saved key is the Account 0 extended public key
-            bip_obj = config["class"].FromExtendedKey(extended_pub_key, config["coin"])
+        # The saved key is the Account 0 extended public key
+        bip_obj = config["class"].FromExtendedKey(extended_pub_key, config["coin"])
 
         addresses = []
         for i in range(start_index, start_index + count):
-            if chain == "SOL":
-                # Solana: Account / Change / Index
-                # Bip-utils Solana implementation might vary, check Bip44 for Solana
-                # Usually m/44'/501'/0'/0'
-                child = bip_obj.Change(Bip44Changes.CHAIN_EXT).AddressIndex(i)
-            elif chain in ["ETH", "TRX"]:
-                # BIP44 path: m/44'/coin'/account'/change/index
-                child = bip_obj.Change(Bip44Changes.CHAIN_EXT).AddressIndex(i)
-            else:
-                # BIP84 (SegWit) path: m/84'/coin'/account'/change/index
-                child = bip_obj.Change(Bip44Changes.CHAIN_EXT).AddressIndex(i)
-            
+            # All chains now use a unified BIP44/BIP84 Account 0 as the starting bip_obj
+            # Path: Account 0 / Change 0 / Index i
+            child = bip_obj.Change(Bip44Changes.CHAIN_EXT).AddressIndex(i)
             addresses.append(child.PublicKey().ToAddress())
             
         return addresses

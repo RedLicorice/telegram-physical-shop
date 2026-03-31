@@ -22,17 +22,18 @@ TRC20_TOKENS = {
 class TronChecker(BaseChecker):
     def __init__(self):
         self.api_key = os.getenv('TRONGRID_API_KEY', '')
-        if EnvKeys.USE_TESTNET:
-            # Using Nile Testnet (Nile is often preferred for development)
-            self.base_url = "https://nile.trongrid.io/v1/accounts"
-        else:
-            self.base_url = "https://api.trongrid.io/v1/accounts"
 
-    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, **kwargs) -> bool:
+    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, use_testnet: bool, **kwargs) -> bool:
         """
         Check Tron payment (TRX or TRC20).
         Since Trongrid returns all assets in one call, we fetch the account and check the requested asset.
         """
+        if use_testnet:
+            # Using Nile Testnet (Nile is often preferred for development)
+            base_url = "https://nile.trongrid.io/v1/accounts"
+        else:
+            base_url = "https://api.trongrid.io/v1/accounts"
+
         if currency not in ['TRX'] and currency not in TRC20_TOKENS:
             logger.error(f"Unsupported Tron currency: {currency}")
             return False

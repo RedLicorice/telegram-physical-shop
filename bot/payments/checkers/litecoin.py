@@ -8,23 +8,22 @@ from bot.config.env import EnvKeys
 logger = logging.getLogger(__name__)
 
 class LitecoinChecker(BaseChecker):
-    def __init__(self):
-        if EnvKeys.USE_TESTNET:
-            self.base_url = "https://api.blockcypher.com/v1/ltc/test3/addrs"
-        else:
-            self.base_url = "https://api.blockcypher.com/v1/ltc/main/addrs"
-
-    async def check_payment(self, address: str, expected_amount: Decimal, currency: str = 'LTC', **kwargs) -> bool:
+    async def check_payment(self, address: str, expected_amount: Decimal, currency: str, use_testnet: bool, **kwargs) -> bool:
         """
         Check Litecoin payment using blockcypher API.
         Checks total received (to handle new addresses per order).
         """
+        if use_testnet:
+            base_url = "https://api.blockcypher.com/v1/ltc/test3/addrs"
+        else:
+            base_url = "https://api.blockcypher.com/v1/ltc/main/addrs"
+
         if currency != 'LTC':
             logger.error(f"LitecoinChecker cannot check currency {currency}")
             return False
 
         try:
-            url = f"{self.base_url}/{address}/balance"
+            url = f"{base_url}/{address}/balance"
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
