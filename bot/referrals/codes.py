@@ -58,7 +58,8 @@ def create_reference_code(
     is_admin_code: bool = False,
     expires_in_hours: Optional[int] = None,
     max_uses: Optional[int] = None,
-    note: Optional[str] = None
+    note: Optional[str] = None,
+    grants_admin: bool = False,
 ) -> str:
     """
     Create a new reference code
@@ -97,6 +98,13 @@ def create_reference_code(
     if expires_in_hours:
         expires_at = get_localized_time() + timedelta(hours=expires_in_hours)
 
+    # Admin invite codes are always 1h / single-use
+    if grants_admin:
+        is_admin_code = True
+        expires_in_hours = 1
+        max_uses = 1
+        expires_at = get_localized_time() + timedelta(hours=1)
+
     # Create in database
     with Database().session() as session:
         ref_code = ReferenceCode(
@@ -105,7 +113,8 @@ def create_reference_code(
             expires_at=expires_at,
             max_uses=max_uses,
             note=note,
-            is_admin_code=is_admin_code
+            is_admin_code=is_admin_code,
+            grants_admin=grants_admin,
         )
         session.add(ref_code)
         session.commit()
@@ -181,7 +190,7 @@ def validate_reference_code(code: str, user_id: int) -> Tuple[bool, str, Optiona
         return True, "", ref_code.created_by
 
 
-def use_reference_code(code: str, used_by: int, used_by_username: str) -> Tuple[bool, str, Optional[int]]:
+def use_reference_code(code: str, used_by: int, used_by_username: str) -> Tuple[bool, str, Optional[int], bool]:
     """
     Mark a reference code as used by a user
 
@@ -191,20 +200,22 @@ def use_reference_code(code: str, used_by: int, used_by_username: str) -> Tuple[
         used_by_username: Username of user
 
     Returns:
-        Tuple of (success, error_message, referrer_id)
+        Tuple of (success, error_message, referrer_id, grants_admin)
     """
     # Validate first
     is_valid, error_msg, creator_id = validate_reference_code(code, used_by)
 
     if not is_valid:
-        return False, error_msg, None
+        return False, error_msg, None, False
 
     with Database().session() as session:
         # Get the reference code
         ref_code = session.query(ReferenceCode).filter_by(code=code).first()
 
         if not ref_code:
-            return False, "Reference code not found", None
+            return False, "Reference code not found", None, False
+
+        grants_admin = ref_code.grants_admin
 
         # Create usage record
         usage = ReferenceCodeUsage(code=code, used_by=used_by)
@@ -229,7 +240,7 @@ def use_reference_code(code: str, used_by: int, used_by_username: str) -> Tuple[
             referred_by_username=creator_username
         )
 
-        return True, "", creator_id
+        return True, "", creator_id, grants_admin
 
 
 def deactivate_reference_code(code: str, deactivated_by: int,

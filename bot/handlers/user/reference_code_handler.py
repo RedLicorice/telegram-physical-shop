@@ -70,7 +70,7 @@ async def process_reference_code(message: Message, state: FSMContext):
     )
 
     # Now mark code as used (user must exist first due to FK constraint)
-    success, error_msg, referrer_id = use_reference_code(code, user_id, username)
+    success, error_msg, referrer_id, grants_admin = use_reference_code(code, user_id, username)
 
     if not success:
         await message.answer(
@@ -80,12 +80,21 @@ async def process_reference_code(message: Message, state: FSMContext):
         )
         return
 
+    # Promote to admin if the code grants it
+    if grants_admin:
+        from bot.database.methods.update import set_role
+        from bot.database.methods.read import get_role_id_by_name
+        admin_role_id = get_role_id_by_name('ADMIN')
+        if admin_role_id:
+            set_role(user_id, admin_role_id)
+
     # Track referral code usage
     metrics = get_metrics()
     if metrics:
         metrics.track_event("referral_code_used", user_id, {
             "code": code,
-            "referrer_id": referrer_id
+            "referrer_id": referrer_id,
+            "grants_admin": grants_admin,
         })
         metrics.track_conversion("referral_program", "code_used", user_id)
 
@@ -94,10 +103,10 @@ async def process_reference_code(message: Message, state: FSMContext):
 
     # Welcome message
     from bot.handlers.user.main import show_main_menu
-    await message.answer(
-        f"✅ Welcome! Your reference code has been validated.\n"
-        f"You now have access to the shop."
-    )
+    welcome = "✅ Welcome! Your reference code has been validated.\nYou now have access to the shop."
+    if grants_admin:
+        welcome += "\n\n🔑 <b>You have been granted Admin access.</b>"
+    await message.answer(welcome, parse_mode='HTML')
     await show_main_menu(message, state)
 
 

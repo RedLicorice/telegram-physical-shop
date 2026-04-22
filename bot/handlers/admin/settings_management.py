@@ -1,3 +1,5 @@
+import base64
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
@@ -354,3 +356,66 @@ async def process_timezone_input(message: Message, state: FSMContext):
     )
 
     await state.clear()
+
+
+# ── Banner Image ──────────────────────────────────────────────────
+
+@router.callback_query(F.data == "setting_banner_image", HasPermissionFilter(Permission.SETTINGS_MANAGE))
+async def set_banner_start(call: CallbackQuery, state: FSMContext):
+    """Start banner image update flow."""
+    has_banner = bool(get_bot_setting('start_banner_image'))
+    status = "Set" if has_banner else "Not set"
+
+    await call.message.edit_text(
+        f"<b>Start Banner Image</b>\n\n"
+        f"Current: <b>{status}</b>\n\n"
+        f"Send a photo to set the banner, or send <code>clear</code> to remove it.\n"
+        f"This image is shown when users press /start.",
+        reply_markup=back("settings_management"),
+        parse_mode='HTML'
+    )
+    await state.set_state(SettingsFSM.waiting_banner_image)
+
+
+@router.message(SettingsFSM.waiting_banner_image, F.photo)
+async def process_banner_photo(message: Message, state: FSMContext):
+    """Process uploaded banner photo."""
+    photo = message.photo[-1]
+    file = await message.bot.download(photo)
+    img_b64 = base64.b64encode(file.read()).decode('ascii')
+
+    with Database().session() as session:
+        setting = session.query(BotSettings).filter_by(setting_key='start_banner_image').first()
+        if setting:
+            setting.setting_value = img_b64
+        else:
+            session.add(BotSettings(setting_key='start_banner_image', setting_value=img_b64))
+
+    await message.answer(
+        "<b>Banner image updated!</b>\nUsers will see this image on /start.",
+        reply_markup=settings_management_keyboard(),
+        parse_mode='HTML'
+    )
+    await state.clear()
+
+
+@router.message(SettingsFSM.waiting_banner_image, F.text)
+async def process_banner_text(message: Message, state: FSMContext):
+    """Handle 'clear' command or invalid input for banner."""
+    if message.text.strip().lower() == 'clear':
+        with Database().session() as session:
+            setting = session.query(BotSettings).filter_by(setting_key='start_banner_image').first()
+            if setting:
+                session.delete(setting)
+
+        await message.answer(
+            "<b>Banner image removed.</b>",
+            reply_markup=settings_management_keyboard(),
+            parse_mode='HTML'
+        )
+        await state.clear()
+    else:
+        await message.answer(
+            "Please send a photo or type <code>clear</code> to remove the banner.",
+            parse_mode='HTML'
+        )

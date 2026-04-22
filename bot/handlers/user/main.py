@@ -5,7 +5,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 from urllib.parse import urlparse
+import base64
 import datetime
+import io
+
+from aiogram.types import BufferedInputFile
 
 from bot.database.methods import (
     select_max_role_id, create_user, check_role,
@@ -13,7 +17,7 @@ from bot.database.methods import (
     get_reference_bonus_percent
 )
 from bot.database import Database
-from bot.database.models.main import CustomerInfo
+from bot.database.models.main import CustomerInfo, BotSettings
 from bot.handlers.other import check_sub_channel
 from bot.keyboards import main_menu, back, profile_keyboard, check_sub
 from bot.config import EnvKeys
@@ -56,6 +60,20 @@ async def show_main_menu(message: Message, state: FSMContext):
         logger.warning(f"Channel subscription check failed for user {user_id}: {e}")
 
     markup = main_menu(role=role_data, channel=channel_username, helper=EnvKeys.HELPER_ID)
+
+    # Send banner image if set
+    try:
+        with Database().session() as s:
+            banner = s.query(BotSettings).filter_by(setting_key='start_banner_image').first()
+            if banner and banner.setting_value:
+                img_data = base64.b64decode(banner.setting_value)
+                photo = BufferedInputFile(img_data, filename="banner.png")
+                await message.answer_photo(photo=photo, caption=localize("menu.title"), reply_markup=markup)
+                await state.clear()
+                return
+    except Exception as e:
+        logger.warning(f"Failed to send banner image: {e}")
+
     await message.answer(localize("menu.title"), reply_markup=markup)
     await state.clear()
 
@@ -139,7 +157,11 @@ async def back_to_menu_callback_handler(call: CallbackQuery, state: FSMContext):
                        ) or None
 
     markup = main_menu(role=role_id, channel=channel_username, helper=EnvKeys.HELPER_ID)
-    await call.message.edit_text(localize("menu.title"), reply_markup=markup)
+    try:
+        await call.message.edit_text(localize("menu.title"), reply_markup=markup)
+    except TelegramBadRequest:
+        await call.message.delete()
+        await call.message.answer(localize("menu.title"), reply_markup=markup)
     await state.clear()
 
 

@@ -3,6 +3,7 @@ from functools import partial
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest
 
 from bot.database.methods import get_bought_item_info, check_value, query_categories, query_user_bought_items, \
     get_item_info_cached
@@ -33,7 +34,11 @@ async def shop_callback_handler(call: CallbackQuery, state: FSMContext):
         nav_cb_prefix="categories-page_",
     )
 
-    await call.message.edit_text(localize("shop.categories.title"), reply_markup=markup)
+    try:
+        await call.message.edit_text(localize("shop.categories.title"), reply_markup=markup)
+    except TelegramBadRequest:
+        await call.message.delete()
+        await call.message.answer(localize("shop.categories.title"), reply_markup=markup)
 
     # Save paginator state
     await state.update_data(categories_paginator=paginator.get_state())

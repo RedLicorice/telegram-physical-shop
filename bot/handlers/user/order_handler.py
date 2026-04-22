@@ -280,20 +280,33 @@ async def payment_method_crypto_handler(call: CallbackQuery, state: FSMContext):
     """
     await call.answer()
     
-    crypto_options = [
-        ("Bitcoin (BTC)", "crypto_pay_BTC_BTC"),
-        ("Litecoin (LTC)", "crypto_pay_LTC_LTC"),
-        ("Ethereum (ETH)", "crypto_pay_ETH_ETH"),
-        ("USDT (ERC20)", "crypto_pay_ETH_USDT-ERC20"),
-        ("USDC (ERC20)", "crypto_pay_ETH_USDC-ERC20"),
-        ("Solana (SOL)", "crypto_pay_SOL_SOL"),
-        ("USDT (SPL)", "crypto_pay_SOL_USDT-SPL"),
-        ("USDC (SPL)", "crypto_pay_SOL_USDC-SPL"),
-        ("Tron (TRX)", "crypto_pay_TRX_TRX"),
-        ("USDT (TRC20)", "crypto_pay_TRX_USDT-TRC20"),
-        ("USDC (TRC20)", "crypto_pay_TRX_USDC-TRC20"),
+    all_crypto_options = [
+        ("BTC", "Bitcoin (BTC)", "crypto_pay_BTC_BTC"),
+        ("LTC", "Litecoin (LTC)", "crypto_pay_LTC_LTC"),
+        ("ETH", "Ethereum (ETH)", "crypto_pay_ETH_ETH"),
+        ("USDT-ERC20", "USDT (ERC20)", "crypto_pay_ETH_USDT-ERC20"),
+        ("USDC-ERC20", "USDC (ERC20)", "crypto_pay_ETH_USDC-ERC20"),
+        ("SOL", "Solana (SOL)", "crypto_pay_SOL_SOL"),
+        ("USDT-SPL", "USDT (SPL)", "crypto_pay_SOL_USDT-SPL"),
+        ("USDC-SPL", "USDC (SPL)", "crypto_pay_SOL_USDC-SPL"),
+        ("TRX", "Tron (TRX)", "crypto_pay_TRX_TRX"),
+        ("USDT-TRC20", "USDT (TRC20)", "crypto_pay_TRX_USDT-TRC20"),
+        ("USDC-TRC20", "USDC (TRC20)", "crypto_pay_TRX_USDC-TRC20"),
     ]
-    
+
+    # Filter by per-currency enabled setting
+    crypto_options = [
+        (label, cb) for code, label, cb in all_crypto_options
+        if get_bot_setting(f"currency_enabled_{code}", default="true").lower() != "false"
+    ]
+
+    if not crypto_options:
+        await call.message.edit_text(
+            "No cryptocurrencies are currently enabled. Please contact the shop admin.",
+            reply_markup=back("back_to_menu"),
+        )
+        return
+
     await call.message.edit_text(
         "Please select a cryptocurrency:",
         reply_markup=simple_buttons(crypto_options, per_row=2)
@@ -451,7 +464,19 @@ async def process_crypto_payment_new_message(message: Message, state: FSMContext
     # Format to 6 decimals
     crypto_amount = crypto_amount_exact.quantize(Decimal('1.000000'))
 
-    # Get Crypto address
+    # ── Testnet user wallets: create wallet, show faucet, offer auto-pay ──
+    from bot.payments.testnet_wallet import is_testnet_wallets_enabled, CURRENCY_TO_CHAIN
+    if is_testnet_wallets_enabled():
+        wallet_chain = CURRENCY_TO_CHAIN.get(currency, chain)
+        await _handle_testnet_wallet_payment(
+            message, state, user_id, username,
+            wallet_chain, currency, chain,
+            cart_items, total_amount, bonus_applied, final_amount,
+            crypto_amount,
+        )
+        return
+
+    # Get Crypto address (normal production flow)
     crypto_address = get_available_crypto_address(chain)
 
     if not crypto_address:
@@ -1005,3 +1030,235 @@ async def notify_admin_new_cash_order(bot, order_code: str, buyer_id: int, buyer
 
     except Exception as e:
         logger.error(f"Failed to send admin notification for cash order: {e}")
+
+
+# ── Testnet wallet payment flow ──────────────────────────────────
+
+async def _handle_testnet_wallet_payment(
+    message: Message, state: FSMContext,
+    user_id: int, username: str,
+    wallet_chain: str, currency: str, chain: str,
+    cart_items: list, total_amount: Decimal,
+    bonus_applied: Decimal, final_amount: Decimal,
+    crypto_amount: Decimal,
+):
+    """Create/retrieve testnet wallet, show faucet link, offer auto-pay."""
+    from bot.payments.testnet_wallet import (
+        get_or_create_wallet, get_faucet_url, get_wallet_balance,
+    )
+
+    user_address, _ = get_or_create_wallet(user_id, wallet_chain)
+    faucet_url = get_faucet_url(wallet_chain)
+    balance = await get_wallet_balance(wallet_chain, user_address, currency)
+
+    # We still need a shop address to receive the payment
+    crypto_address = get_available_crypto_address(chain)
+    if not crypto_address:
+        await message.answer(
+            localize("order.payment.system_unavailable"),
+            reply_markup=back("back_to_menu"),
+        )
+        return
+
+    # Store payment details in state for the auto-pay callback
+    await state.update_data(
+        tw_chain=chain, tw_currency=currency, tw_wallet_chain=wallet_chain,
+        tw_user_address=user_address, tw_shop_address=crypto_address,
+        tw_crypto_amount=str(crypto_amount), tw_total=str(total_amount),
+        tw_bonus=str(bonus_applied), tw_final=str(final_amount),
+        tw_username=username,
+    )
+
+    has_funds = balance >= crypto_amount
+    balance_color = "green" if has_funds else "red"
+
+    text = (
+        f"<b>TESTNET WALLET PAYMENT</b>\n\n"
+        f"<b>Your {wallet_chain} testnet wallet:</b>\n"
+        f"<code>{user_address}</code>\n\n"
+        f"Balance: <b>{balance} {currency}</b>\n"
+        f"Required: <b>{crypto_amount} {currency}</b>\n\n"
+    )
+
+    if not has_funds:
+        text += (
+            f"<b>Top up your wallet first:</b>\n"
+            f"1. Copy your address above\n"
+            f"2. Visit the faucet: {faucet_url}\n"
+            f"3. Request testnet {wallet_chain}\n"
+            f"4. Press <b>Check Balance</b> below\n\n"
+        )
+
+    items_summary = [f"{ci['item_name']} x{ci['quantity']}" for ci in cart_items]
+    text += "<b>Items:</b>\n" + "\n".join(items_summary) + "\n"
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    if has_funds:
+        kb.button(text="Send Payment", callback_data="tw_send_payment")
+    kb.button(text="Check Balance", callback_data="tw_check_balance")
+    if faucet_url:
+        kb.button(text=f"Open {wallet_chain} Faucet", url=faucet_url)
+    kb.button(text="Cancel", callback_data="back_to_menu")
+    kb.adjust(1)
+
+    await message.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "tw_check_balance")
+async def tw_check_balance(call: CallbackQuery, state: FSMContext):
+    """Re-check testnet wallet balance."""
+    from bot.payments.testnet_wallet import get_wallet_balance, get_faucet_url
+
+    data = await state.get_data()
+    wallet_chain = data.get('tw_wallet_chain')
+    currency = data.get('tw_currency')
+    user_address = data.get('tw_user_address')
+    crypto_amount = Decimal(data.get('tw_crypto_amount', '0'))
+
+    if not wallet_chain:
+        await call.answer("Session expired. Start over.", show_alert=True)
+        return
+
+    balance = await get_wallet_balance(wallet_chain, user_address, currency)
+    has_funds = balance >= crypto_amount
+    faucet_url = get_faucet_url(wallet_chain)
+
+    text = (
+        f"<b>TESTNET WALLET PAYMENT</b>\n\n"
+        f"<b>Your {wallet_chain} wallet:</b>\n"
+        f"<code>{user_address}</code>\n\n"
+        f"Balance: <b>{balance} {currency}</b>\n"
+        f"Required: <b>{crypto_amount} {currency}</b>\n\n"
+    )
+
+    if has_funds:
+        text += "Funds available! Press <b>Send Payment</b> to pay.\n"
+    else:
+        text += f"Not enough funds. Get testnet coins from the faucet.\n"
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    if has_funds:
+        kb.button(text="Send Payment", callback_data="tw_send_payment")
+    kb.button(text="Check Balance", callback_data="tw_check_balance")
+    if faucet_url:
+        kb.button(text=f"Open {wallet_chain} Faucet", url=faucet_url)
+    kb.button(text="Cancel", callback_data="back_to_menu")
+    kb.adjust(1)
+
+    try:
+        await call.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="HTML")
+    except Exception:
+        await call.answer(f"Balance: {balance} {currency}", show_alert=True)
+
+
+@router.callback_query(F.data == "tw_send_payment")
+async def tw_send_payment(call: CallbackQuery, state: FSMContext):
+    """Send payment from user's testnet wallet to shop address."""
+    from bot.payments.testnet_wallet import (
+        get_or_create_wallet, send_payment, CURRENCY_TO_CHAIN,
+    )
+
+    data = await state.get_data()
+    chain = data.get('tw_chain')
+    currency = data.get('tw_currency')
+    wallet_chain = data.get('tw_wallet_chain')
+    shop_address = data.get('tw_shop_address')
+    crypto_amount = Decimal(data.get('tw_crypto_amount', '0'))
+    total_amount = Decimal(data.get('tw_total', '0'))
+    bonus_applied = Decimal(data.get('tw_bonus', '0'))
+    final_amount = Decimal(data.get('tw_final', '0'))
+    username = data.get('tw_username', '')
+    user_id = call.from_user.id
+
+    if not chain or not shop_address:
+        await call.answer("Session expired. Start over.", show_alert=True)
+        return
+
+    await call.answer("Sending payment...")
+
+    _, priv_key = get_or_create_wallet(user_id, wallet_chain)
+    success, result = await send_payment(wallet_chain, currency, priv_key, shop_address, crypto_amount)
+
+    if success:
+        # Create the order in DB (same as normal flow)
+        try:
+            with Database().session() as session:
+                customer_info = session.query(CustomerInfo).filter_by(telegram_id=user_id).first()
+                if not customer_info:
+                    await call.message.edit_text("Customer info not found. Please restart checkout.")
+                    return
+
+                if bonus_applied > 0:
+                    customer_info.bonus_balance -= bonus_applied
+
+                cart_items = session.query(ShoppingCart).filter_by(user_id=user_id).all()
+                order = Order(
+                    buyer_id=user_id,
+                    total_price=total_amount,
+                    bonus_applied=bonus_applied,
+                    payment_method="crypto",
+                    delivery_address=customer_info.delivery_address,
+                    phone_number=customer_info.phone_number,
+                    delivery_note=customer_info.delivery_note or "",
+                    crypto_address=shop_address,
+                    crypto_amount=crypto_amount,
+                    crypto_currency=currency,
+                    order_status="pending",
+                    use_testnet=True,
+                )
+                session.add(order)
+                session.flush()
+                order.order_code = generate_unique_order_code(session)
+
+                items_to_reserve = []
+                for ci in cart_items:
+                    session.add(OrderItem(
+                        order_id=order.id, item_name=ci.item_name,
+                        price=Decimal('0'), quantity=ci.quantity,
+                    ))
+                    items_to_reserve.append({'item_name': ci.item_name, 'quantity': ci.quantity})
+
+                reserve_inventory(order.id, items_to_reserve, payment_method='crypto', session=session)
+                mark_crypto_address_used(
+                    chain, shop_address, user_id, username, order.id,
+                    session=session, order_code=order.order_code,
+                )
+                session.query(ShoppingCart).filter_by(user_id=user_id).delete()
+
+            await call.message.edit_text(
+                f"<b>Payment sent!</b>\n\n"
+                f"TX: <code>{result}</code>\n\n"
+                f"Order <b>{order.order_code}</b> created.\n"
+                f"The payment checker will confirm it automatically.",
+                reply_markup=back("back_to_menu"),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Testnet wallet order creation error: {e}")
+            await call.message.edit_text(
+                f"Payment sent (TX: <code>{result}</code>) but order creation failed: {e}\n"
+                f"Contact admin.",
+                reply_markup=back("back_to_menu"),
+                parse_mode="HTML",
+            )
+    else:
+        text = (
+            f"<b>Payment failed</b>\n\n"
+            f"{result}\n\n"
+        )
+        # For chains without auto-send, show manual instructions
+        if "not implemented" in result.lower():
+            user_address = data.get('tw_user_address')
+            text += (
+                f"Please send manually from your wallet:\n"
+                f"<b>From:</b> <code>{user_address}</code>\n"
+                f"<b>To:</b> <code>{shop_address}</code>\n"
+                f"<b>Amount:</b> <code>{crypto_amount} {currency}</code>\n\n"
+                f"The payment checker will detect it automatically."
+            )
+
+        await call.message.edit_text(
+            text, reply_markup=back("back_to_menu"), parse_mode="HTML"
+        )

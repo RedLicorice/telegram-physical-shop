@@ -131,6 +131,7 @@ class Goods(Database.BASE):
                            nullable=False, index=True)
     stock_quantity = Column(Integer, nullable=False, default=0)  # Total stock in warehouse
     reserved_quantity = Column(Integer, nullable=False, default=0)  # Reserved in pending orders
+    image = Column(Text, nullable=True)  # Base64-encoded product image
     category = relationship("Categories", back_populates="item")
 
     @property
@@ -139,13 +140,14 @@ class Goods(Database.BASE):
         return max(0, self.stock_quantity - self.reserved_quantity)
 
     def __init__(self, name: str, price, description: str, category_name: str,
-                 stock_quantity: int = 0, **kw: Any):
+                 stock_quantity: int = 0, image: str = None, **kw: Any):
         super().__init__(**kw)
         self.name = name
         self.price = price
         self.description = description
         self.category_name = category_name
         self.stock_quantity = stock_quantity
+        self.image = image
 
 
 class BoughtGoods(Database.BASE):
@@ -231,6 +233,7 @@ class ReferenceCode(Database.BASE):
     note = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     is_admin_code = Column(Boolean, nullable=False, default=False)
+    grants_admin = Column(Boolean, nullable=False, default=False)  # User who redeems gets ADMIN role
 
     creator = relationship("User", foreign_keys=lambda: [ReferenceCode.created_by])
     usages = relationship("ReferenceCodeUsage", back_populates="reference_code", cascade="all, delete-orphan")
@@ -240,13 +243,14 @@ class ReferenceCode(Database.BASE):
     )
 
     def __init__(self, code: str, created_by: int, expires_at=None, max_uses=None, note=None,
-                 is_admin_code=False, **kw: Any):
+                 is_admin_code=False, grants_admin=False, **kw: Any):
         super().__init__(**kw)
         self.code = code
         self.created_by = created_by
         self.expires_at = expires_at
         self.max_uses = max_uses
         self.note = note
+        self.grants_admin = grants_admin
         self.is_admin_code = is_admin_code
 
 
@@ -498,6 +502,32 @@ class InventoryLog(Database.BASE):
         self.order_id = order_id
         self.admin_id = admin_id
         self.comment = comment
+
+
+class UserTestnetWallet(Database.BASE):
+    """Per-user, per-chain testnet wallet. Only used when USE_TESTNET + setting enabled."""
+    __tablename__ = 'user_testnet_wallets'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(BigInteger, ForeignKey('users.telegram_id', ondelete="CASCADE"), nullable=False)
+    chain = Column(String(20), nullable=False)  # BTC, ETH, SOL, TRX, LTC
+    address = Column(String(150), nullable=False)
+    private_key_enc = Column(Text, nullable=False)  # Fernet-encrypted hex private key
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    user = relationship("User", foreign_keys=lambda: [UserTestnetWallet.user_id])
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'chain', name='uq_user_chain_testnet'),
+        Index('ix_testnet_wallets_user', 'user_id'),
+    )
+
+    def __init__(self, user_id: int, chain: str, address: str, private_key_enc: str, **kw: Any):
+        super().__init__(**kw)
+        self.user_id = user_id
+        self.chain = chain
+        self.address = address
+        self.private_key_enc = private_key_enc
 
 
 def register_models():

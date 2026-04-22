@@ -47,6 +47,10 @@ def get_redis_storage() -> Optional[RedisStorage]:
     Returns None if Redis is not available.
     """
     try:
+        if not EnvKeys.REDIS_HOST:
+            logging.info("REDIS_HOST not set — skipping Redis storage")
+            return None
+
         # Use None for password if empty to avoid AUTH error on non-authenticated Redis
         redis_password = EnvKeys.REDIS_PASSWORD if EnvKeys.REDIS_PASSWORD else None
 

@@ -1,26 +1,47 @@
 import os
 from pathlib import Path
 from typing import List, Tuple, Optional
-from bip_utils import (
-    Bip39MnemonicGenerator, Bip39SeedGenerator, Bip39WordsNum,
-    Bip44, Bip44Coins, Bip44Changes,
-    Bip49, Bip49Coins,
-    Bip84, Bip84Coins
-)
+
+
+def _load_bip_utils():
+    """Lazy-load bip_utils to avoid 8s+ import at startup."""
+    from bip_utils import (
+        Bip39MnemonicGenerator, Bip39SeedGenerator, Bip39WordsNum,
+        Bip44, Bip44Coins, Bip44Changes,
+        Bip49, Bip49Coins,
+        Bip84, Bip84Coins
+    )
+    return {
+        'Bip39MnemonicGenerator': Bip39MnemonicGenerator,
+        'Bip39SeedGenerator': Bip39SeedGenerator,
+        'Bip39WordsNum': Bip39WordsNum,
+        'Bip44': Bip44, 'Bip44Coins': Bip44Coins, 'Bip44Changes': Bip44Changes,
+        'Bip49': Bip49, 'Bip49Coins': Bip49Coins,
+        'Bip84': Bip84, 'Bip84Coins': Bip84Coins,
+    }
+
 
 class WalletManager:
     """
     Manages BIP-based wallet generation and address derivation for multiple chains.
     """
-    
-    # Mapping of chain names to bip-utils coin types and classes
-    CHAIN_CONFIG = {
-        "BTC": {"class": Bip84, "coin": Bip84Coins.BITCOIN},
-        "ETH": {"class": Bip44, "coin": Bip44Coins.ETHEREUM},
-        "LTC": {"class": Bip84, "coin": Bip84Coins.LITECOIN},
-        "SOL": {"class": Bip44, "coin": Bip44Coins.SOLANA},
-        "TRX": {"class": Bip44, "coin": Bip44Coins.TRON},
-    }
+
+    CHAIN_CONFIG = None  # Populated on first use
+
+    @classmethod
+    def _ensure_config(cls):
+        if cls.CHAIN_CONFIG is not None:
+            return
+        bip = _load_bip_utils()
+        cls.CHAIN_CONFIG = {
+            "BTC": {"class": bip['Bip84'], "coin": bip['Bip84Coins'].BITCOIN},
+            "ETH": {"class": bip['Bip44'], "coin": bip['Bip44Coins'].ETHEREUM},
+            "LTC": {"class": bip['Bip84'], "coin": bip['Bip84Coins'].LITECOIN},
+            "SOL": {"class": bip['Bip44'], "coin": bip['Bip44Coins'].SOLANA},
+            "TRX": {"class": bip['Bip44'], "coin": bip['Bip44Coins'].TRON},
+        }
+        # Also store references we need in methods
+        cls._bip = bip
 
     def __init__(self, wallets_dir: str = "config/wallets"):
         self.wallets_dir = Path(wallets_dir)
@@ -35,20 +56,22 @@ class WalletManager:
     def generate_keypair(self, chain: str) -> Tuple[str, str, str]:
         """
         Generates a new mnemonic and derived public/private keys.
-        
+
         Returns:
             Tuple[str, str, str]: (mnemonic, encoded_public_key, encoded_private_key)
         """
+        self._ensure_config()
         chain = chain.upper()
         if chain not in self.CHAIN_CONFIG:
             raise ValueError(f"Unsupported chain: {chain}")
 
+        bip = self._bip
         # 1. Generate 12-word mnemonic
-        mnemonic = Bip39MnemonicGenerator().FromWordsNumber(Bip39WordsNum.WORDS_NUM_12)
-        
+        mnemonic = bip['Bip39MnemonicGenerator']().FromWordsNumber(bip['Bip39WordsNum'].WORDS_NUM_12)
+
         # 2. Generate seed
-        seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
-        
+        seed_bytes = bip['Bip39SeedGenerator'](mnemonic).Generate()
+
         # 3. Create Bip object
         config = self.CHAIN_CONFIG[chain]
         bip_obj = config["class"].FromSeed(seed_bytes, config["coin"])
@@ -69,6 +92,7 @@ class WalletManager:
         """
         Imports an existing mnemonic or public key (XPUB).
         """
+        self._ensure_config()
         chain = chain.upper()
         if chain not in self.CHAIN_CONFIG:
             raise ValueError(f"Unsupported chain: {chain}")
@@ -77,10 +101,10 @@ class WalletManager:
             raise ValueError("Either mnemonic or public_key must be provided.")
 
         config = self.CHAIN_CONFIG[chain]
-        
+
         if mnemonic:
             # Validate mnemonic and derive keys
-            seed_bytes = Bip39SeedGenerator(mnemonic).Generate()
+            seed_bytes = self._bip['Bip39SeedGenerator'](mnemonic).Generate()
             bip_obj = config["class"].FromSeed(seed_bytes, config["coin"])
             
             account_0 = bip_obj.Purpose().Coin().Account(0)
@@ -131,9 +155,10 @@ class WalletManager:
         """
         Derives addresses from an extended public key found in config/wallets/.
         """
+        self._ensure_config()
         chain = chain.upper()
         public_path = self.get_public_file(chain)
-        
+
         if not public_path.exists():
             raise FileNotFoundError(f"Public key for {chain} not found at {public_path}. Please generate or add it.")
 
@@ -141,16 +166,13 @@ class WalletManager:
             extended_pub_key = f.read().strip()
 
         config = self.CHAIN_CONFIG[chain]
-        
+
         # Reconstruct Bip object from Extended Public Key
-        # The saved key is the Account 0 extended public key
         bip_obj = config["class"].FromExtendedKey(extended_pub_key, config["coin"])
 
         addresses = []
         for i in range(start_index, start_index + count):
-            # All chains now use a unified BIP44/BIP84 Account 0 as the starting bip_obj
-            # Path: Account 0 / Change 0 / Index i
-            child = bip_obj.Change(Bip44Changes.CHAIN_EXT).AddressIndex(i)
+            child = bip_obj.Change(self._bip['Bip44Changes'].CHAIN_EXT).AddressIndex(i)
             addresses.append(child.PublicKey().ToAddress())
             
         return addresses

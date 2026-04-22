@@ -65,6 +65,7 @@ def settings_management_keyboard() -> InlineKeyboardMarkup:
     kb.button(text=localize("btn.referral_bonus_percent"), callback_data="setting_referral_percent")
     kb.button(text=localize("btn.order_timeout"), callback_data="setting_order_timeout")
     kb.button(text=localize("btn.timezone"), callback_data="setting_timezone")
+    kb.button(text="Banner Image", callback_data="setting_banner_image")
     kb.button(text=localize("btn.back"), callback_data="console")
     kb.adjust(1)
     return kb.as_markup()
